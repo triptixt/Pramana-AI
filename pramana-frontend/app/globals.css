@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+/* ─── Type-scale tokens ──────────────────────────────────────────────────── */
+:root {
+  /* Font families */
+  --font-heading:    var(--font-poppins), system-ui, sans-serif;
+  --font-body:       var(--font-poppins), var(--font-inter), system-ui, sans-serif;
+  --font-numeric:    var(--font-inter),   var(--font-poppins), system-ui, sans-serif;
+
+  /* Font weights */
+  --fw-regular:      400;
+  --fw-medium:       500;
+  --fw-semibold:     600;
+
+  /* Font sizes */
+  --fs-main-title:   clamp(32px, 4vw, 40px);   /* Main title  32–40 px */
+  --fs-section-head: clamp(24px, 3vw, 28px);   /* Section heading 24–28 px */
+  --fs-subheading:   clamp(18px, 2.5vw, 22px); /* Subheading 18–22 px */
+  --fs-body:         clamp(14px, 1.5vw, 16px); /* Body 14–16 px */
+  --fs-label:        clamp(12px, 1.2vw, 14px); /* Diagram labels 12–14 px */
+}
+
+/* ─── Base element styles ────────────────────────────────────────────────── */
+@layer base {
+  body {
+    background-color: #FAF9F6;
+    color: #0f172a;
+    font-family: var(--font-body);
+    font-size: var(--fs-body);
+    font-weight: var(--fw-regular);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings — Poppins SemiBold */
+  h1 {
+    font-family: var(--font-heading);
+    font-size: var(--fs-main-title);
+    font-weight: var(--fw-semibold);
+    line-height: 1.15;
+  }
+
+  h2 {
+    font-family: var(--font-heading);
+    font-size: var(--fs-section-head);
+    font-weight: var(--fw-semibold);
+    line-height: 1.2;
+  }
+
+  /* Subheadings — Poppins Medium */
+  h3 {
+    font-family: var(--font-heading);
+    font-size: var(--fs-subheading);
+    font-weight: var(--fw-medium);
+    line-height: 1.3;
+  }
+
+  h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-size: var(--fs-body);
+    font-weight: var(--fw-medium);
+    line-height: 1.4;
+  }
+}
+
+/* ─── Semantic utility classes ───────────────────────────────────────────── */
+
+/* Headings: Poppins SemiBold */
+.font-heading {
+  font-family: var(--font-heading);
+  font-weight: var(--fw-semibold);
+}
+
+/* Subheadings: Poppins Medium */
+.font-subheading {
+  font-family: var(--font-heading);
+  font-weight: var(--fw-medium);
+}
+
+/* Body: Poppins Regular */
+.font-body {
+  font-family: var(--font-body);
+  font-weight: var(--fw-regular);
+}
+
+/* Numbers & dashboards: Inter Medium */
+.font-numeric {
+  font-family: var(--font-numeric);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Size helpers */
+.text-main-title   { font-size: var(--fs-main-title); }
+.text-section-head { font-size: var(--fs-section-head); }
+.text-subheading   { font-size: var(--fs-subheading); }
+.text-body         { font-size: var(--fs-body); }
+.text-label        { font-size: var(--fs-label); }
+
+/* ─── Custom Scrollbars ──────────────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.7);
+}
+
+/* ─── Smooth Pulse Animation ─────────────────────────────────────────────── */
+@keyframes softPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.03); }
+}
+
+.animate-soft-pulse {
+  animation: softPulse 3s infinite ease-in-out;
+}
+
