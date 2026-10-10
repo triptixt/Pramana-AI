@@ -19,8 +19,15 @@ def get_db():
     finally:
         db.close()
 
-# Canonical 7 Roles
+# Canonical 8 Enterprise Roles
 ROLES_INFO = {
+    "super_admin": {
+        "id": "super_admin",
+        "title": "Super Admin",
+        "fullName": "Platform Super Administrator",
+        "description": "Full platform administration, organization onboarding, and user management across tenants.",
+        "badgeColor": "bg-indigo-100 text-indigo-700 border-indigo-200"
+    },
     "ciso": {
         "id": "ciso",
         "title": "CISO",
@@ -84,8 +91,19 @@ PAGES_INFO = {
     "settings": {"title": "Settings", "icon": "Settings", "category": "Management"},
 }
 
-# The Canonical RBAC Matrix requested by the user
+# The Canonical RBAC Matrix
 RBAC_MATRIX: Dict[str, Dict[str, str]] = {
+    "super_admin": {
+        "overview": "Full",
+        "evidence": "Full",
+        "controls": "Full",
+        "gaps": "Full",
+        "review-queue": "Full",
+        "audit-trail": "Full",
+        "reports": "Full",
+        "frameworks": "Full",
+        "settings": "Full"
+    },
     "ciso": {
         "overview": "Full",
         "evidence": "Full",
@@ -106,7 +124,7 @@ RBAC_MATRIX: Dict[str, Dict[str, str]] = {
         "audit-trail": "Full",
         "reports": "Full",
         "frameworks": "Full",
-        "settings": "Admin/limited"
+        "settings": "❌"
     },
     "internal_auditor": {
         "overview": "View",
@@ -165,11 +183,14 @@ RBAC_MATRIX: Dict[str, Dict[str, str]] = {
     }
 }
 
-# Role aliases for backward compatibility
+# Role aliases for backward compatibility resolution
 ROLE_ALIASES = {
-    "admin": "ciso",
-    "auditor": "external_auditor",
+    "admin": "super_admin",
+    "superadmin": "super_admin",
+    "vciso": "ciso",
+    "compliance_manager": "grc",
     "compliance_team": "grc",
+    "auditor": "external_auditor",
     "viewer": "executive"
 }
 
@@ -189,7 +210,7 @@ def get_rbac_matrix():
 
 @router.get("/roles")
 def get_rbac_roles():
-    """Returns the list of 7 primary enterprise personas with role metadata."""
+    """Returns the list of 8 canonical enterprise personas with role metadata."""
     return list(ROLES_INFO.values())
 
 @router.get("/role/{role_id}")
@@ -227,75 +248,11 @@ def check_permission(
 @router.post("/seed")
 def seed_rbac_in_db(db: Session = Depends(get_db)):
     """Synchronizes the canonical RBAC roles and page permissions into the database."""
-    # Ensure all permissions exist in database
-    created_perms = 0
-    created_roles = 0
-    created_mappings = 0
-
-    # 1. Register permissions for each page and access tier
-    all_needed_permissions = set()
-    for role_key, page_map in RBAC_MATRIX.items():
-        for page_key, access_level in page_map.items():
-            if access_level != "❌":
-                perm_code = f"{page_key}:{access_level.lower().replace('/', '_').replace(' ', '_')}"
-                all_needed_permissions.add((perm_code, f"{access_level} access to {page_key}"))
-
-    perm_id_map = {}
-    for code, desc in all_needed_permissions:
-        existing = db.query(Permission).filter(Permission.name == code).first()
-        if not existing:
-            new_perm = Permission(name=code, description=desc)
-            db.add(new_perm)
-            db.commit()
-            db.refresh(new_perm)
-            perm_id_map[code] = new_perm.id
-            created_perms += 1
-        else:
-            perm_id_map[code] = existing.id
-
-    # 2. Ensure each role exists for default organization (org 1)
-    role_id_map = {}
-    for role_key, info in ROLES_INFO.items():
-        existing_role = db.query(Role).filter(Role.name == role_key).first()
-        if not existing_role:
-            new_role = Role(
-                organization_id=1,
-                name=role_key,
-                description=f"{info['title']} - {info['description']}"
-            )
-            db.add(new_role)
-            db.commit()
-            db.refresh(new_role)
-            role_id_map[role_key] = new_role.id
-            created_roles += 1
-        else:
-            role_id_map[role_key] = existing_role.id
-
-    # 3. Assign role permissions
-    for role_key, page_map in RBAC_MATRIX.items():
-        r_id = role_id_map.get(role_key)
-        if not r_id:
-            continue
-        for page_key, access_level in page_map.items():
-            if access_level != "❌":
-                perm_code = f"{page_key}:{access_level.lower().replace('/', '_').replace(' ', '_')}"
-                p_id = perm_id_map.get(perm_code)
-                if p_id:
-                    exists = db.query(RolePermission).filter(
-                        RolePermission.role_id == r_id,
-                        RolePermission.permission_id == p_id
-                    ).first()
-                    if not exists:
-                        rp = RolePermission(role_id=r_id, permission_id=p_id)
-                        db.add(rp)
-                        created_mappings += 1
-
-    db.commit()
+    from app.services.rbac_service import initialize_rbac
+    stats = initialize_rbac(db)
 
     return {
         "status": "success",
         "message": "RBAC roles and permissions synchronized successfully.",
-        "created_permissions": created_perms,
-        "created_roles": created_roles,
-        "created_mappings": created_mappings
+        **stats
     }

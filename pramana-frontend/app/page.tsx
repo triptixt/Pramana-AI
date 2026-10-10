@@ -14,10 +14,11 @@ import { ReviewDecisionModal } from '../components/modals/ReviewDecisionModal';
 import { EvidenceDetailDrawer } from '../components/drawers/EvidenceDetailDrawer';
 import { ControlDetailDrawer } from '../components/drawers/ControlDetailDrawer';
 import { AuditLogDetailDrawer } from '../components/drawers/AuditLogDetailDrawer';
-import { AIChatDrawer } from '../components/drawers/AIChatDrawer';
+
 
 // Views
 import { OverviewView } from '../components/views/OverviewView';
+import { SelectFrameworksView } from '../components/views/SelectFrameworksView';
 import { EvidenceLibraryView } from '../components/views/EvidenceLibraryView';
 import { ControlCenterView } from '../components/views/ControlCenterView';
 import { GapAnalysisView } from '../components/views/GapAnalysisView';
@@ -32,6 +33,7 @@ import { hasPageAccess } from '../lib/rbac';
 
 const PAGE_NAMES: Record<string, string> = {
   overview: 'Overview Dashboard',
+  'select-frameworks': 'Select Certification Frameworks',
   evidence: 'Evidence Library',
   controls: 'Control Center',
   gaps: 'Gap Analysis',
@@ -40,6 +42,9 @@ const PAGE_NAMES: Record<string, string> = {
   reports: 'Reports & Analytics',
   frameworks: 'Frameworks',
   'super-admin': 'Super Admin Console',
+  'admin-organizations': 'Organizations Management',
+  'admin-frameworks': 'Frameworks Registry',
+  'admin-users': 'User Management',
   settings: 'Settings',
 };
 
@@ -62,6 +67,8 @@ function ProtectedMerchantDashboard() {
     switch (activeView) {
       case 'overview':
         return <OverviewView />;
+      case 'select-frameworks':
+        return <SelectFrameworksView />;
       case 'evidence':
         return <EvidenceLibraryView />;
       case 'controls':
@@ -77,7 +84,13 @@ function ProtectedMerchantDashboard() {
       case 'frameworks':
         return <FrameworksView />;
       case 'super-admin':
-        return <SuperAdminView />;
+        return <SuperAdminView initialTab="overview" />;
+      case 'admin-organizations':
+        return <SuperAdminView initialTab="organizations" />;
+      case 'admin-frameworks':
+        return <SuperAdminView initialTab="frameworks" />;
+      case 'admin-users':
+        return <SuperAdminView initialTab="users" />;
       case 'settings':
         return <SettingsView />;
       default:
@@ -126,7 +139,7 @@ function ProtectedMerchantDashboard() {
       <EvidenceDetailDrawer />
       <ControlDetailDrawer />
       <AuditLogDetailDrawer />
-      <AIChatDrawer />
+
     </div>
   );
 }

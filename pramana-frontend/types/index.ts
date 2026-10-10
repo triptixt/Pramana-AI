@@ -1,15 +1,12 @@
 export type Role =
+  | 'super_admin'
   | 'ciso'
   | 'grc'
   | 'internal_auditor'
   | 'control_owner'
   | 'evidence_contributor'
   | 'external_auditor'
-  | 'executive'
-  | 'admin'
-  | 'auditor'
-  | 'compliance_team'
-  | 'viewer';
+  | 'executive';
 
 export type PageAccessLevel =
   | 'Full'
@@ -42,6 +39,7 @@ export interface Organization {
   plan: 'Enterprise' | 'Growth' | 'Starter';
   auditPeriod: string;
   activeFrameworks: FrameworkId[];
+  created_at?: string;
 }
 
 export interface UserProfile {
@@ -57,7 +55,7 @@ export interface UserProfile {
   status: 'active' | 'pending' | 'inactive';
 }
 
-export type FrameworkId = 'iso-27001' | 'soc-2' | 'pci-dss' | 'dpdp';
+export type FrameworkId = 'all' | 'iso-27001' | 'soc-2' | 'pci-dss' | 'dpdp' | 'nist-csf' | (string & {});
 
 export interface FrameworkInfo {
   id: FrameworkId;
@@ -241,6 +239,7 @@ export interface NotificationItem {
 
 export type ActiveView =
   | 'overview'
+  | 'select-frameworks'
   | 'evidence'
   | 'controls'
   | 'gaps'
@@ -249,4 +248,87 @@ export type ActiveView =
   | 'reports'
   | 'frameworks'
   | 'super-admin'
+  | 'admin-organizations'
+  | 'admin-frameworks'
+  | 'admin-users'
   | 'settings';
+
+export interface ControlRelationshipItem {
+  id: number;
+  source_control_id: number;
+  target_control_id: number;
+  relationship_type: string;
+  source_reference?: string;
+  mapping_confidence?: number;
+  status: 'proposed' | 'approved' | 'rejected' | string;
+  mapping_source?: 'ai_generated' | 'manual' | 'imported' | string;
+  ai_explanation?: string;
+  overlap_summary?: string;
+  differences_summary?: string;
+  reviewed_by?: number;
+  reviewed_at?: string;
+  created_at?: string;
+  source_control?: {
+    id: number;
+    framework_version_id: number;
+    control_code: string;
+    title: string;
+    category?: string;
+    description?: string;
+    requirement?: string;
+    framework_id?: number;
+    framework_name?: string;
+    framework_code?: string;
+    framework_version?: string;
+  };
+  target_control?: {
+    id: number;
+    framework_version_id: number;
+    control_code: string;
+    title: string;
+    category?: string;
+    description?: string;
+    requirement?: string;
+    framework_id?: number;
+    framework_name?: string;
+    framework_code?: string;
+    framework_version?: string;
+  };
+}
+
+export interface EvidenceControlMappingItem {
+  id: number;
+  evidence_id: number;
+  control_id: number;
+  mapping_type: string;
+  confidence_score: number | null;
+  mapping_status: 'pending' | 'approved' | 'rejected' | string;
+  notes: string | null;
+  ai_explanation?: string;
+  requirement_supported?: string;
+  unsupported_requirements?: string;
+  reviewed_by?: number;
+  reviewed_at?: string;
+  created_at?: string;
+  evidence?: {
+    id: number;
+    organization_id: number;
+    file_name: string;
+    file_type?: string;
+    description?: string;
+    status: string;
+  };
+  control?: {
+    id: number;
+    framework_version_id: number;
+    control_code: string;
+    title: string;
+    category?: string;
+    requirement?: string;
+    framework_id?: number;
+    framework_name?: string;
+    framework_code?: string;
+    framework_version?: string;
+  };
+}
+

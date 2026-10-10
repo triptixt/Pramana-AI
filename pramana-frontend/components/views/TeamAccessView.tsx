@@ -11,7 +11,7 @@ export const TeamAccessView: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
-  const [inviteRole, setInviteRole] = useState<Role>('compliance_team');
+  const [inviteRole, setInviteRole] = useState<Role>('grc');
 
   const orgUsers = usersList.filter((u) => u.organizationId === currentOrg.id);
 
@@ -66,7 +66,7 @@ export const TeamAccessView: React.FC = () => {
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">External Auditors</p>
             <p className="text-2xl font-extrabold text-emerald-600 font-mono mt-0.5">
-              {orgUsers.filter((u) => u.role === 'auditor').length}
+              {orgUsers.filter((u) => u.role === 'external_auditor').length}
             </p>
           </div>
           <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -127,7 +127,7 @@ export const TeamAccessView: React.FC = () => {
                   <td className="py-3.5 px-4">
                     <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-lg border ${usr.role === 'ciso'
                         ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                        : usr.role === 'auditor'
+                        : usr.role === 'external_auditor'
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : 'bg-slate-100 text-slate-700 border-slate-200'
                       }`}>
@@ -217,10 +217,13 @@ export const TeamAccessView: React.FC = () => {
               onChange={(e) => setInviteRole(e.target.value as Role)}
               className="w-full p-2.5 rounded-xl border border-slate-200 text-xs bg-white font-medium"
             >
-              <option value="compliance_team">Compliance Team Specialist</option>
-              <option value="auditor">External Auditor (Audit Review Scope)</option>
               <option value="ciso">Enterprise CISO (Executive Admin)</option>
-              <option value="admin">Super Administrator</option>
+              <option value="grc">GRC / Compliance Manager</option>
+              <option value="internal_auditor">Internal Auditor</option>
+              <option value="control_owner">Control Owner</option>
+              <option value="evidence_contributor">Evidence Contributor</option>
+              <option value="external_auditor">External Auditor (Audit Review Scope)</option>
+              <option value="executive">Executive Leadership</option>
             </select>
           </div>
 

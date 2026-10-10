@@ -132,7 +132,6 @@ export const PublicFrameworks: React.FC = () => {
   const activeFramework = frameworksData.find((f) => f.id === selectedFrameworkId) || frameworksData[0];
 
   const handleOpenAuth = () => {
-    setAuthModalMode('signup');
     setIsAuthModalOpen(true);
   };
 

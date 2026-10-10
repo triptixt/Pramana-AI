@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -54,3 +55,9 @@ class EvidenceRequest(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="evidence_requests")
+    requester = relationship("User", foreign_keys=[requested_by], back_populates="evidence_requests_created")
+    assignee = relationship("User", foreign_keys=[assigned_to], back_populates="evidence_requests_assigned")
+    control = relationship("Control", back_populates="evidence_requests")

@@ -43,24 +43,10 @@ export const PublicFooter: React.FC = () => {
             <ul className="space-y-2 text-xs">
               <li>
                 <button
-                  onClick={() => {
-                    setAuthModalMode('login');
-                    setIsAuthModalOpen(true);
-                  }}
-                  className="hover:text-white transition-colors"
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="hover:text-white transition-colors cursor-pointer"
                 >
-                  Sign In (Merchant Vault)
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => {
-                    setAuthModalMode('signup');
-                    setIsAuthModalOpen(true);
-                  }}
-                  className="hover:text-white transition-colors"
-                >
-                  Create Organization Vault
+                  Sign In (Enterprise Vault)
                 </button>
               </li>
               <li><a href="#tenant-security" className="hover:text-white transition-colors">Tenant Data Privacy Policy</a></li>

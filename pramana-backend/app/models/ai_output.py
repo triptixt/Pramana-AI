@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
-from app.database import get_db
 
 
 class AIOutput(Base):
@@ -12,7 +12,7 @@ class AIOutput(Base):
 
     ai_run_id = Column(
         Integer,
-        ForeignKey("ai_runs.id"),
+        ForeignKey("ai_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -32,3 +32,6 @@ class AIOutput(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    ai_run = relationship("AIRun", back_populates="outputs")

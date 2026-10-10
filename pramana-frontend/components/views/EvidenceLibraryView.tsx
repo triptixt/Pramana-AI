@@ -21,13 +21,12 @@ import {
   Layers
 } from 'lucide-react';
 import { FrameworkId, ProcessingStatus } from '../../types';
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 
 export const EvidenceLibraryView: React.FC = () => {
   const { evidenceList, setIsUploadModalOpen, setSelectedEvidenceId, setSelectedReviewItem, reviewQueueList, showToast, activeUser } = useApp();
 
   const access = getPageAccess(activeUser.role, 'evidence');
-  const accessBadge = getAccessBadge(access);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFileType, setSelectedFileType] = useState<string>('all');
@@ -38,7 +37,7 @@ export const EvidenceLibraryView: React.FC = () => {
     // RBAC Scoping
     if (access === 'Assigned only') {
       // Scoped to items owned by or mapped to the user/audit scope
-      const isAuditorScope = activeUser.role === 'external_auditor' || activeUser.role === 'auditor';
+      const isAuditorScope = activeUser.role === 'external_auditor';
       const isOwnerMatch = item.owner.toLowerCase().includes(activeUser.name.split(' ')[0].toLowerCase());
       if (!isAuditorScope && !isOwnerMatch) {
         return false;
@@ -57,52 +56,6 @@ export const EvidenceLibraryView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* RBAC Scoped Scope Alert */}
-      {access === 'Assigned only' && (
-        <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Evidence Only ({activeUser.roleTitle}): </span>
-              <span>Showing evidence items directly assigned to your control domain or designated engagement scope.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-bold border border-indigo-200 text-[10px] shrink-0">
-            Assigned Only
-          </span>
-        </div>
-      )}
-
-      {access === 'Create/Upload' && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Upload className="w-4 h-4 text-emerald-600 shrink-0" />
-            <div>
-              <span className="font-bold">Evidence Contributor Mode: </span>
-              <span>Upload required compliance evidence, configuration exports, and policy files for automated AI extraction.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-emerald-700 font-bold border border-emerald-200 text-[10px] shrink-0">
-            Create / Upload
-          </span>
-        </div>
-      )}
-
-      {access === 'View/Review' && (
-        <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Eye className="w-4 h-4 text-sky-600 shrink-0" />
-            <div>
-              <span className="font-bold">Internal Auditor View/Review Mode: </span>
-              <span>Inspect documents, verify AI citations, and examine automated control mappings. Record deletion is disabled.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-sky-700 font-bold border border-sky-200 text-[10px] shrink-0">
-            View / Review
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -110,9 +63,6 @@ export const EvidenceLibraryView: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               Evidence Library
             </h1>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-              {accessBadge.label}
-            </span>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
             Upload security artifacts once. Pramana AI automatically maps them across ISO 27001, SOC 2, PCI & DPDP frameworks.
@@ -316,6 +266,24 @@ export const EvidenceLibraryView: React.FC = () => {
                           title="View Details"
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              showToast('AI Processing', `Extracting & Embedding ${item.fileName}...`, 'info');
+                              const numericId = parseInt(item.id.replace(/^[a-z]+-/, ''), 10);
+                              await import('../../lib/api').then(m => m.api.evidence.process(numericId));
+                              showToast('Processing Complete', `${item.fileName} processed successfully`, 'success');
+                            } catch (err: any) {
+                              showToast('Processing Failed', err.message || 'Failed to process document', 'error');
+                            }
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-fuchsia-600 hover:bg-fuchsia-50 rounded-lg transition-colors"
+                          title="Process Document (Extract & Embed)"
+                        >
+                          <Sparkles className="w-4 h-4" />
                         </button>
 
                         {reviewItem && reviewItem.status === 'pending_review' && (

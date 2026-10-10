@@ -1,4 +1,6 @@
 from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
 
 class OrganizationCreate(BaseModel):
@@ -8,6 +10,7 @@ class OrganizationCreate(BaseModel):
 class OrganizationResponse(BaseModel):
     id: int
     name: str
+    created_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True
+        from_attributes = True

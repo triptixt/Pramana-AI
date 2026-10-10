@@ -22,11 +22,24 @@ def get_db():
         db.close()
 
 
+from app.models.user import User
+from app.core.dependencies import get_current_user
+from app.services.rbac_service import get_user_effective_permissions
+
+
 @router.post("/", response_model=ControlResponse)
 def create_control(
     control_data: ControlCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_controls" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_controls' required"
+        )
+
     new_control = Control(
         framework_version_id=control_data.framework_version_id,
         control_code=control_data.control_code,
@@ -41,35 +54,94 @@ def create_control(
     return new_control
 
 
+from app.models.framework import Framework
+from app.models.framework_version import FrameworkVersion
+
 @router.get("/", response_model=list[ControlResponse])
-def get_controls(db: Session = Depends(get_db)):
-    return db.query(Control).all()
+def get_controls(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    rows = (
+        db.query(Control, FrameworkVersion, Framework)
+        .outerjoin(FrameworkVersion, Control.framework_version_id == FrameworkVersion.id)
+        .outerjoin(Framework, FrameworkVersion.framework_id == Framework.id)
+        .all()
+    )
+
+    results = []
+    for ctrl, ver, fw in rows:
+        results.append(
+            ControlResponse(
+                id=ctrl.id,
+                framework_version_id=ctrl.framework_version_id,
+                control_code=ctrl.control_code,
+                title=ctrl.title,
+                description=ctrl.description,
+                requirement=ctrl.requirement,
+                category=ctrl.category,
+                guidance=ctrl.guidance,
+                source_reference=ctrl.source_reference,
+                is_active=ctrl.is_active,
+                framework_code=fw.code if fw else None,
+                framework_name=fw.name if fw else None
+            )
+        )
+    return results
 
 
 @router.get("/{control_id}", response_model=ControlResponse)
 def get_control(
     control_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    control = db.query(Control).filter(
-        Control.id == control_id
-    ).first()
+    row = (
+        db.query(Control, FrameworkVersion, Framework)
+        .outerjoin(FrameworkVersion, Control.framework_version_id == FrameworkVersion.id)
+        .outerjoin(Framework, FrameworkVersion.framework_id == Framework.id)
+        .filter(Control.id == control_id)
+        .first()
+    )
 
-    if control is None:
+    if not row:
         raise HTTPException(
             status_code=404,
             detail="Control not found"
         )
 
-    return control
+    ctrl, ver, fw = row
+    return ControlResponse(
+        id=ctrl.id,
+        framework_version_id=ctrl.framework_version_id,
+        control_code=ctrl.control_code,
+        title=ctrl.title,
+        description=ctrl.description,
+        requirement=ctrl.requirement,
+        category=ctrl.category,
+        guidance=ctrl.guidance,
+        source_reference=ctrl.source_reference,
+        is_active=ctrl.is_active,
+        framework_code=fw.code if fw else None,
+        framework_name=fw.name if fw else None
+    )
+
 
 
 @router.put("/{control_id}", response_model=ControlResponse)
 def update_control(
     control_id: int,
     control_data: ControlCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_controls" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_controls' required"
+        )
+
     control = db.query(Control).filter(
         Control.id == control_id
     ).first()
@@ -94,8 +166,16 @@ def update_control(
 @router.delete("/{control_id}")
 def delete_control(
     control_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_controls" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_controls' required"
+        )
+
     control = db.query(Control).filter(
         Control.id == control_id
     ).first()
@@ -111,4 +191,4 @@ def delete_control(
 
     return {
         "message": "Control deleted successfully"
-    }
+    }

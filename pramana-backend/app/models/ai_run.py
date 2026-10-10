@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -51,3 +52,9 @@ class AIRun(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="ai_runs")
+    evidence = relationship("Evidence", back_populates="ai_runs")
+    user = relationship("User", back_populates="ai_runs")
+    outputs = relationship("AIOutput", back_populates="ai_run", cascade="all, delete-orphan")

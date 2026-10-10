@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -28,3 +29,14 @@ class Role(Base):
         String,
         nullable=True
     )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "name", name="uq_roles_organization_name"),
+    )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="roles")
+    user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+    users = relationship("User", secondary="user_roles", back_populates="roles", viewonly=True)
+    role_permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+    permissions = relationship("Permission", secondary="role_permissions", back_populates="roles", viewonly=True)

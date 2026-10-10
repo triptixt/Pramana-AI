@@ -11,33 +11,23 @@ import {
   Clock,
   AlertTriangle,
   ShieldCheck,
-  Sparkles,
   ChevronRight,
   CheckCircle2,
-  Calendar,
-  AlertCircle
 } from 'lucide-react';
-
-
-import { getPageAccess, getAccessBadge, hasPageAccess } from '../../lib/rbac';
+import { getPageAccess, hasPageAccess } from '../../lib/rbac';
 
 export const OverviewView: React.FC = () => {
   const {
     activeUser,
     setActiveView,
     setIsUploadModalOpen,
-    evidenceList,
     controlsList,
     gapsList,
     reviewQueueList,
     auditTrailList,
-    setActiveFrameworkFilter,
-    setSelectedEvidenceId,
-    setSelectedReviewItem
   } = useApp();
 
   const access = getPageAccess(activeUser.role, 'overview');
-  const accessBadge = getAccessBadge(access);
 
   const totalControls = controlsList.length;
   const coveredControls = controlsList.filter(
@@ -50,39 +40,6 @@ export const OverviewView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Role Access Scope Notice if Limited or View */}
-      {access === 'Limited' && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Scoped Overview Active ({activeUser.roleTitle}): </span>
-              <span>
-                Displaying metrics and control health scoped strictly to your assigned controls and designated engagement boundaries.
-              </span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-amber-800 font-bold border border-amber-200 text-[10px] shrink-0">
-            Limited Scope
-          </span>
-        </div>
-      )}
-
-      {access === 'View' && (
-        <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-            <div>
-              <span className="font-bold">Executive / Auditor View Mode: </span>
-              <span>High-level compliance overview. Administrative configuration controls are read-only.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-blue-800 font-bold border border-blue-200 text-[10px] shrink-0">
-            View Only
-          </span>
-        </div>
-      )}
-
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -90,12 +47,9 @@ export const OverviewView: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               Hi, {activeUser.name.split(' ')[0]} 👋
             </h1>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-              {accessBadge.label}
-            </span>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
-            Real-time compliance posture across ISO 27001, SOC 2, NIST CSF, PCI DSS & HIPAA.
+            Real-time compliance posture across enrolled framework controls.
           </p>
         </div>
 
@@ -103,7 +57,7 @@ export const OverviewView: React.FC = () => {
           {hasPageAccess(activeUser.role, 'reports') && (
             <button
               onClick={() => setActiveView('reports')}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-xs text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-2xs"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-xs text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
             >
               <BarChart3 className="w-4 h-4 text-slate-500" />
               View Reports
@@ -123,10 +77,14 @@ export const OverviewView: React.FC = () => {
               <span>Real-Time Compliance Audit Status</span>
             </div>
             <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white">
-              {readinessPercent}% of active compliance framework controls covered
+              {totalControls > 0
+                ? `${readinessPercent}% of active compliance framework controls covered`
+                : 'No compliance framework controls loaded'}
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed">
-              Pramana AI analyzed {totalControls} controls across active frameworks. Auditor verification is active for {pendingReviewsCount} pending review items.
+              {totalControls > 0
+                ? `Pramana compliance engine evaluated ${totalControls} controls in the database. Auditor verification is active for ${pendingReviewsCount} review items.`
+                : 'Upload or seed compliance frameworks and evidence in PostgreSQL to begin automated compliance readiness assessment.'}
             </p>
           </div>
 
@@ -137,7 +95,7 @@ export const OverviewView: React.FC = () => {
             </div>
             <ProgressBar value={readinessPercent} color="emerald" size="md" />
             <div className="flex justify-between items-center text-[11px] text-slate-400">
-              <span>Target: SOC 2 & ISO Audit</span>
+              <span>Target: Active Controls</span>
               <span>{coveredControls} / {totalControls} Controls</span>
             </div>
           </div>
@@ -223,7 +181,6 @@ export const OverviewView: React.FC = () => {
         </div>
       </div>
 
-
       {/* Lower Section: Activity Feed & Priority Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Priority Actions */}
@@ -248,7 +205,7 @@ export const OverviewView: React.FC = () => {
                     <p className="text-xs text-slate-600 mt-0.5">{gap.whyIdentified}</p>
                     <div className="mt-2 flex items-center gap-3 text-xs">
                       {hasPageAccess(activeUser.role, 'gaps') && (
-                        <button onClick={() => setActiveView('gaps')} className="font-semibold text-rose-600 hover:underline">
+                        <button onClick={() => setActiveView('gaps')} className="font-semibold text-rose-600 hover:underline cursor-pointer">
                           View Gap & Remediate →
                         </button>
                       )}
@@ -282,7 +239,7 @@ export const OverviewView: React.FC = () => {
                   </p>
                   <div className="mt-2 flex items-center gap-3 text-xs">
                     {hasPageAccess(activeUser.role, 'review-queue') && (
-                      <button onClick={() => setActiveView('review-queue')} className="font-semibold text-amber-700 hover:underline">
+                      <button onClick={() => setActiveView('review-queue')} className="font-semibold text-amber-700 hover:underline cursor-pointer">
                         Go to Auditor Review Queue →
                       </button>
                     )}
@@ -291,7 +248,7 @@ export const OverviewView: React.FC = () => {
               </div>
             ) : null}
 
-            {/* Upload evidence prompt if library is empty or needed */}
+            {/* Upload evidence prompt */}
             {(getPageAccess(activeUser.role, 'evidence') === 'Full' || getPageAccess(activeUser.role, 'evidence') === 'Create/Upload') && (
               <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
@@ -306,7 +263,7 @@ export const OverviewView: React.FC = () => {
                     Submit audit reports, security policies, architecture diagrams, or logs for automated AI parsing.
                   </p>
                   <div className="mt-2 flex items-center gap-3 text-xs">
-                    <button onClick={() => setIsUploadModalOpen(true)} className="font-semibold text-indigo-600 hover:underline">
+                    <button onClick={() => setIsUploadModalOpen(true)} className="font-semibold text-indigo-600 hover:underline cursor-pointer">
                       Upload Document →
                     </button>
                   </div>
@@ -323,7 +280,7 @@ export const OverviewView: React.FC = () => {
             {hasPageAccess(activeUser.role, 'audit-trail') && (
               <button
                 onClick={() => setActiveView('audit-trail')}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"
               >
                 Full Trail
               </button>

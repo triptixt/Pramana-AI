@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -49,3 +50,10 @@ class Audit(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="audits")
+    framework = relationship("Framework", back_populates="audits")
+    creator = relationship("User", back_populates="audits_created")
+    reviews = relationship("AuditReview", back_populates="audit", cascade="all, delete-orphan")
+    decisions = relationship("AuditDecision", back_populates="audit", cascade="all, delete-orphan")

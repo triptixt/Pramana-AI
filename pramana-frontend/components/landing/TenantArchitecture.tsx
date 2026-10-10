@@ -5,7 +5,7 @@ import { useApp } from '../../lib/context';
 import { Lock, ShieldCheck, Building2, CheckCircle2, UserCheck, ArrowRight } from 'lucide-react';
 
 export const PublicTenantArchitecture: React.FC = () => {
-  const { login } = useApp();
+  const { setIsAuthModalOpen } = useApp();
 
   return (
     <section id="tenant-security" className="py-20 bg-[#FAF9F6] border-t border-slate-200/80">
@@ -50,9 +50,9 @@ export const PublicTenantArchitecture: React.FC = () => {
               <div className="w-10 h-10 rounded-xl bg-violet-500/20 text-violet-400 flex items-center justify-center mx-auto font-bold">
                 2
               </div>
-              <h4 className="text-sm font-bold text-white">Login / Signup Auth</h4>
+              <h4 className="text-sm font-bold text-white">Enterprise Authentication</h4>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Authentication binds users to their specific merchant organization tenant ID.
+                Authentication binds users to their specific organization tenant ID and RBAC permissions.
               </p>
             </div>
 
@@ -61,40 +61,24 @@ export const PublicTenantArchitecture: React.FC = () => {
               <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto font-bold">
                 3
               </div>
-              <h4 className="text-sm font-bold text-emerald-300">Merchant Data Vault</h4>
+              <h4 className="text-sm font-bold text-emerald-300">Isolated Tenant Vault</h4>
               <p className="text-xs text-emerald-100/80 leading-relaxed">
-                Dashboard displays <strong>ONLY</strong> evidence, controls, and audit logs for that merchant.
+                Dashboard displays <strong>ONLY</strong> evidence, controls, and audit logs for that tenant.
               </p>
             </div>
 
           </div>
 
-          {/* Quick Demo Switcher Links */}
+          {/* Direct Login Access */}
           <div className="pt-4 border-t border-slate-800 text-center space-y-3">
-            <p className="text-xs text-slate-400 font-medium">Test Multi-Tenant Switching in Live Demo:</p>
-            <div className="flex flex-wrap justify-center gap-3">
+            <p className="text-xs text-slate-400 font-medium">Ready to access your enterprise compliance vault?</p>
+            <div className="flex justify-center">
               <button
-                onClick={() => login('aarav.mehta@acme.com', 'Password123!', 'org-1')}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 flex items-center gap-2 cursor-pointer"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white shadow-md shadow-indigo-950/50 flex items-center gap-2 cursor-pointer transition-all"
               >
-                <Building2 className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Acme Technologies Vault (Org 1)</span>
-              </button>
-
-              <button
-                onClick={() => login('leo@nova.com', 'Password123!', 'org-2')}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 flex items-center gap-2 cursor-pointer"
-              >
-                <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Nova Fintech Vault (Org 2)</span>
-              </button>
-
-              <button
-                onClick={() => login('david@audits.com', 'Password123!', 'org-1')}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 flex items-center gap-2 cursor-pointer"
-              >
-                <Building2 className="w-3.5 h-3.5 text-amber-400" />
-                <span>External Auditor Vault</span>
+                <Building2 className="w-4 h-4 text-white" />
+                <span>Sign In with Assigned Credentials</span>
               </button>
             </div>
           </div>

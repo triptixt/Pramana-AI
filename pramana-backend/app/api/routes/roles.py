@@ -20,11 +20,31 @@ def get_db():
         db.close()
 
 
+from app.models.user import User
+from app.core.dependencies import get_current_user
+from app.services.rbac_service import get_user_effective_permissions
+
+
 @router.post("/", response_model=RoleResponse)
 def create_role(
     role_data: RoleCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_roles" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_roles' required"
+        )
+
+    # Multi-tenant check
+    if "manage_organizations" not in perms and role_data.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot create roles for another organization"
+        )
+
     new_role = Role(
         organization_id=role_data.organization_id,
         name=role_data.name,
@@ -39,14 +59,21 @@ def create_role(
 
 
 @router.get("/", response_model=list[RoleResponse])
-def get_roles(db: Session = Depends(get_db)):
-    return db.query(Role).all()
+def get_roles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_organizations" in perms:
+        return db.query(Role).all()
+    return db.query(Role).filter(Role.organization_id == current_user.organization_id).all()
 
 
 @router.get("/{role_id}", response_model=RoleResponse)
 def get_role(
     role_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     role = db.query(Role).filter(Role.id == role_id).first()
 
@@ -56,6 +83,13 @@ def get_role(
             detail="Role not found"
         )
 
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_organizations" not in perms and role.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to role from another organization"
+        )
+
     return role
 
 
@@ -63,14 +97,28 @@ def get_role(
 def update_role(
     role_id: int,
     role_data: RoleCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_roles" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_roles' required"
+        )
+
     role = db.query(Role).filter(Role.id == role_id).first()
 
     if role is None:
         raise HTTPException(
             status_code=404,
             detail="Role not found"
+        )
+
+    if "manage_organizations" not in perms and role.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to role from another organization"
         )
 
     role.organization_id = role_data.organization_id
@@ -86,8 +134,16 @@ def update_role(
 @router.delete("/{role_id}")
 def delete_role(
     role_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_roles" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_roles' required"
+        )
+
     role = db.query(Role).filter(Role.id == role_id).first()
 
     if role is None:
@@ -96,9 +152,21 @@ def delete_role(
             detail="Role not found"
         )
 
+    if "manage_organizations" not in perms and role.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to role from another organization"
+        )
+
+    from app.models.role_permission import RolePermission
+    from app.models.user_role import UserRole
+
+    db.query(RolePermission).filter(RolePermission.role_id == role_id).delete(synchronize_session=False)
+    db.query(UserRole).filter(UserRole.role_id == role_id).delete(synchronize_session=False)
+
     db.delete(role)
     db.commit()
 
     return {
         "message": "Role deleted successfully"
-    }
+    }

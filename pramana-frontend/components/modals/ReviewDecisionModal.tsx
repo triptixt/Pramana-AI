@@ -13,7 +13,8 @@ export const ReviewDecisionModal: React.FC = () => {
     approveReviewItem, 
     rejectReviewItem, 
     requestAdditionalEvidence,
-    activeUser 
+    activeUser,
+    usersList
   } = useApp();
 
   const [decisionMode, setDecisionMode] = useState<'approve' | 'reject' | 'request'>('approve');
@@ -186,9 +187,15 @@ export const ReviewDecisionModal: React.FC = () => {
                   onChange={(e) => setAssignedOwner(e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-slate-200 text-xs bg-white font-medium"
                 >
-                  <option value="Priya Sharma">Priya Sharma (GRC Head)</option>
-                  <option value="Aarav Mehta">Aarav Mehta (CISO)</option>
-                  <option value="Marcus Vance">Marcus Vance (Admin)</option>
+                  {usersList.length > 0 ? (
+                    usersList.map((u) => (
+                      <option key={u.id} value={u.name}>
+                        {u.name} ({u.roleTitle || u.role})
+                      </option>
+                    ))
+                  ) : (
+                    <option value="Compliance Team">Compliance Team</option>
+                  )}
                 </select>
               </div>
 

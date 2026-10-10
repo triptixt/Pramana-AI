@@ -15,7 +15,7 @@ import {
   TrendingUp,
   ShieldCheck
 } from 'lucide-react';
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 import { 
   BarChart, 
   Bar, 
@@ -37,25 +37,16 @@ export const ReportsView: React.FC = () => {
   const [activeReportTab, setActiveReportTab] = useState<'readiness' | 'gaps' | 'coverage' | 'auditor'>('readiness');
 
   const access = getPageAccess(activeUser.role, 'reports');
-  const accessBadge = getAccessBadge(access);
 
-  const frameworks = [
-    { code: 'iso-27001', name: 'ISO 27001' },
-    { code: 'soc-2', name: 'SOC 2 Type II' },
-    { code: 'nist-csf', name: 'NIST CSF 2.0' },
-    { code: 'pci-dss', name: 'PCI DSS v4.0' },
-    { code: 'hipaa', name: 'HIPAA Security' },
-  ];
-
-  const readinessChartData = frameworks.map((fw) => {
-    const fwControls = controlsList.filter(
-      (c) => c.framework === fw.code || c.frameworkVersion?.toLowerCase().includes(fw.code)
-    );
+  // Derive unique frameworks from real controls in database
+  const distinctFrameworkCodes = Array.from(new Set(controlsList.map((c) => c.framework))).filter(Boolean);
+  const readinessChartData = distinctFrameworkCodes.map((fwCode) => {
+    const fwControls = controlsList.filter((c) => c.framework === fwCode);
     const total = fwControls.length;
     const covered = fwControls.filter((c) => c.coverageState === 'full' || c.mappedEvidenceCount > 0).length;
-    const readiness = total > 0 ? Math.round((covered / total) * 100) : (totalControlsFallback(total));
+    const readiness = total > 0 ? Math.round((covered / total) * 100) : 0;
     return {
-      framework: fw.name,
+      framework: fwCode.toUpperCase(),
       readiness,
       target: 100,
     };
@@ -65,10 +56,6 @@ export const ReportsView: React.FC = () => {
     ? Math.round(readinessChartData.reduce((acc, curr) => acc + curr.readiness, 0) / readinessChartData.length)
     : 0;
   const totalOpenGaps = gapsList.filter((g) => g.status !== 'resolved').length;
-
-  function totalControlsFallback(total: number): number {
-    return total > 0 ? 0 : 0;
-  }
 
   const criticalCount = gapsList.filter((g) => g.severity === 'critical' && g.status !== 'resolved').length;
   const highCount = gapsList.filter((g) => g.severity === 'high' && g.status !== 'resolved').length;
@@ -108,52 +95,6 @@ export const ReportsView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Role Access Scope Notice */}
-      {access === 'Executive reports' && (
-        <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="w-4 h-4 text-purple-600 shrink-0" />
-            <div>
-              <span className="font-bold">Executive Board Reporting Suite ({activeUser.roleTitle}): </span>
-              <span>Showing strategic compliance scores, risk exposure velocities, and board briefing decks.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-purple-700 font-bold border border-purple-200 text-[10px] shrink-0">
-            Executive Reports
-          </span>
-        </div>
-      )}
-
-      {access === 'Audit reports' && (
-        <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-cyan-600 shrink-0" />
-            <div>
-              <span className="font-bold">Audit Attestation Reports ({activeUser.roleTitle}): </span>
-              <span>Certified SOC 2 Type II readiness packs and ISO 27001 surveillance audit documentation.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-cyan-700 font-bold border border-cyan-200 text-[10px] shrink-0">
-            Audit Reports
-          </span>
-        </div>
-      )}
-
-      {access === 'Relevant reports' && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <BarChart3 className="w-4 h-4 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Relevant Reports Scope ({activeUser.roleTitle}): </span>
-              <span>Control Health, evidence completion velocity, and gap remediation trends for your assigned controls.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-amber-800 font-bold border border-amber-200 text-[10px] shrink-0">
-            Relevant Reports
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -161,9 +102,6 @@ export const ReportsView: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               Reports & Analytics
             </h1>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-              {accessBadge.label}
-            </span>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
             Generate and export board-ready compliance readiness metrics, gap analysis, and auditor attestation logs.
@@ -240,16 +178,23 @@ export const ReportsView: React.FC = () => {
             </span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={readinessChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="framework" tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <Tooltip />
-                <Bar dataKey="readiness" fill="#4f46e5" radius={[6, 6, 0, 0]} name="Readiness %" />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="h-64 w-full flex items-center justify-center">
+            {readinessChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={readinessChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="framework" tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip />
+                  <Bar dataKey="readiness" fill="#4f46e5" radius={[6, 6, 0, 0]} name="Readiness %" />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center text-slate-400 text-xs">
+                <BarChart3 className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                No compliance frameworks loaded in database.
+              </div>
+            )}
           </div>
         </div>
 

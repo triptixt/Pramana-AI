@@ -22,15 +22,32 @@ def get_db():
         db.close()
 
 
+from app.models.user import User
+from app.core.dependencies import get_current_user
+from app.services.rbac_service import get_user_effective_permissions
+
+
 @router.post("/", response_model=AuditResponse)
 def create_audit(
     audit_data: AuditCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_audits" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_audits' required"
+        )
+
+    target_org_id = audit_data.organization_id or current_user.organization_id
+    if "manage_organizations" not in perms and target_org_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Cannot create audits for another organization")
+
     new_audit = Audit(
-        organization_id=audit_data.organization_id,
+        organization_id=target_org_id,
         framework_id=audit_data.framework_id,
-        created_by=audit_data.created_by,
+        created_by=current_user.id,
         name=audit_data.name,
         description=audit_data.description,
         status=audit_data.status,
@@ -46,14 +63,30 @@ def create_audit(
 
 
 @router.get("/", response_model=list[AuditResponse])
-def get_audits(db: Session = Depends(get_db)):
-    return db.query(Audit).all()
+def get_audits(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    perms = get_user_effective_permissions(current_user, db)
+    if "view_reports" not in perms and "manage_audits" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'view_reports' or 'manage_audits' required"
+        )
+
+    if "manage_organizations" in perms:
+        return db.query(Audit).all()
+
+    return db.query(Audit).filter(
+        Audit.organization_id == current_user.organization_id
+    ).all()
 
 
 @router.get("/{audit_id}", response_model=AuditResponse)
 def get_audit(
     audit_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     audit = db.query(Audit).filter(
         Audit.id == audit_id
@@ -65,13 +98,30 @@ def get_audit(
             detail="Audit not found"
         )
 
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_organizations" not in perms and audit.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to audit from another organization"
+        )
+
     return audit
+
+
 @router.put("/{audit_id}", response_model=AuditResponse)
 def update_audit(
     audit_id: int,
     audit_data: AuditCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_audits" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_audits' required"
+        )
+
     audit = db.query(Audit).filter(
         Audit.id == audit_id
     ).first()
@@ -82,9 +132,14 @@ def update_audit(
             detail="Audit not found"
         )
 
+    if "manage_organizations" not in perms and audit.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to audit from another organization"
+        )
+
     audit.organization_id = audit_data.organization_id
     audit.framework_id = audit_data.framework_id
-    audit.created_by = audit_data.created_by
     audit.name = audit_data.name
     audit.description = audit_data.description
     audit.status = audit_data.status
@@ -100,8 +155,16 @@ def update_audit(
 @router.delete("/{audit_id}")
 def delete_audit(
     audit_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_audits" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_audits' required"
+        )
+
     audit = db.query(Audit).filter(
         Audit.id == audit_id
     ).first()
@@ -112,7 +175,13 @@ def delete_audit(
             detail="Audit not found"
         )
 
+    if "manage_organizations" not in perms and audit.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied to audit from another organization"
+        )
+
     db.delete(audit)
     db.commit()
 
-    return {"message": "Audit deleted successfully"}
+    return {"message": "Audit deleted successfully"}

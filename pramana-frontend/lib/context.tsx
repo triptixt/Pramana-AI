@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode, useCallback } from 'react';
 import {
   Role,
   ActiveView,
@@ -18,25 +18,25 @@ import { api } from './api';
 import { ROLES_CONFIG, hasPageAccess, getRoleDefaultPage, normalizeRole } from './rbac';
 
 const INITIAL_ORG: Organization = {
-  id: 'org-1',
-  name: 'Nova Fintech Ltd.',
-  slug: 'nova-fintech-ltd',
-  industry: 'Enterprise Security Software',
+  id: '',
+  name: 'No Organization',
+  slug: '',
+  industry: '',
   plan: 'Enterprise',
-  auditPeriod: 'Annual Q4 Audit Window',
-  activeFrameworks: ['iso-27001', 'soc-2', 'pci-dss', 'dpdp'],
+  auditPeriod: '',
+  activeFrameworks: [],
 };
 
 const INITIAL_USER: UserProfile = {
-  id: 'usr-1',
-  name: 'Aarav Mehta',
-  email: 'aarav@acme.com',
+  id: '',
+  name: 'User',
+  email: '',
   role: 'ciso',
   roleTitle: 'Enterprise CISO',
   avatar: '',
-  organizationId: 'org-1',
-  organizationName: 'Nova Fintech Ltd.',
-  lastActive: 'Active now',
+  organizationId: '',
+  organizationName: '',
+  lastActive: '',
   status: 'active',
 };
 
@@ -66,6 +66,7 @@ interface AppContextType {
 
   login: (email: string, password: string, orgId?: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string, orgName?: string) => Promise<boolean>;
+  resetPassword: (email: string, newPassword: string) => Promise<boolean>;
   logout: () => void;
 
   // View & Role State
@@ -129,8 +130,10 @@ interface AppContextType {
   createOrganizationBackend: (name: string) => Promise<void>;
   updateOrganizationBackend: (id: string, name: string) => Promise<void>;
   deleteOrganizationBackend: (id: string) => Promise<void>;
-  createUserBackend: (data: { name: string; email: string; role: Role }) => Promise<void>;
+  createUserBackend: (data: { name: string; email: string; role: Role; organization_id?: number; password?: string }) => Promise<void>;
+  updateUserBackend: (id: string, data: { name?: string; email?: string; role?: Role; password?: string; is_active?: boolean }) => Promise<void>;
   deleteUserBackend: (id: string) => Promise<void>;
+  impersonateUser: (userId: number) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -195,8 +198,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return isNaN(parsed) ? 1 : parsed;
   };
 
+  const isFetchingBackendRef = useRef(false);
+  const currentOrgRef = useRef(currentOrg);
+  useEffect(() => {
+    currentOrgRef.current = currentOrg;
+  }, [currentOrg]);
+
   // ── Sync with Backend on Mount & Refresh ────────────────────────────────────
-  const refreshBackendData = useCallback(async () => {
+  const refreshBackendData = useCallback(async (explicitOrgId?: string, force = false) => {
+    if (isFetchingBackendRef.current && !force) {
+      return;
+    }
+    isFetchingBackendRef.current = true;
     try {
       const health = await api.checkHealth();
       if (health.status === 'ok' || health.status === 'success') {
@@ -209,6 +222,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         // Check authentication status via token
         const token = api.auth.getToken();
+        let activeOrgForFetch = currentOrgRef.current;
         if (token) {
           try {
             const me = await api.auth.me();
@@ -218,24 +232,31 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             try {
               const backendOrgs = await api.organizations.list();
               if (backendOrgs && backendOrgs.length > 0) {
-                const mappedOrgs: Organization[] = backendOrgs.map((o, idx) => ({
+                const mappedOrgs: Organization[] = backendOrgs.map((o: any, idx: number) => ({
                   id: `org-${o.id}`,
                   name: o.name,
                   slug: o.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                  industry: 'Enterprise Security Software',
+                  industry: 'Enterprise Technology',
                   plan: idx % 2 === 0 ? 'Enterprise' : 'Growth',
-                  auditPeriod: 'Annual Q4 Audit Window',
-                  activeFrameworks: ['iso-27001', 'soc-2', 'pci-dss', 'dpdp'],
+                  auditPeriod: 'Annual Audit Window',
+                  activeFrameworks: [],
+                  created_at: o.created_at,
                 }));
                 setOrganizations(mappedOrgs);
-                const matchingOrg = mappedOrgs.find((o) => o.id === currentOrg.id) || mappedOrgs.find(o => o.id === `org-${me.organization_id}`) || mappedOrgs[0];
+                const chosenOrgId = explicitOrgId || currentOrgRef.current.id;
+                const matchingOrg = mappedOrgs.find((o) => o.id === chosenOrgId) || mappedOrgs.find(o => o.id === `org-${me.organization_id}`) || mappedOrgs[0];
+                activeOrgForFetch = matchingOrg;
                 setCurrentOrg(matchingOrg);
 
+                const isSuper = me.role === 'super_admin' || normalizeRole(me.role || '') === 'super_admin';
+                const assignedRole = (me.role || 'ciso') as Role;
                 setActiveUser((prev) => ({
                   ...prev,
                   id: `usr-${me.id}`,
                   name: me.name || prev.name,
                   email: me.email,
+                  role: assignedRole,
+                  roleTitle: isSuper ? 'Super Admin' : prev.roleTitle,
                   organizationId: matchingOrg.id,
                   organizationName: matchingOrg.name,
                 }));
@@ -248,60 +269,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             api.auth.logout();
             setIsAuthenticated(false);
             setOrganizations([]);
+            return;
           }
         } else {
           setIsAuthenticated(false);
           setOrganizations([]);
+          setUsersList([]);
+          setMasterControls([]);
+          setMasterEvidence([]);
+          setMasterGaps([]);
+          setMasterAuditTrail([]);
+          setMasterNotifications([]);
+          return;
         }
 
         // Fetch Users from PostgreSQL backend
-        let backendUsersList: Array<{ id: number; organization_id: number; name: string; email: string; is_active: boolean }> = [];
+        let backendUsersList: Array<{ id: number; organization_id: number; name: string; email: string; is_active: boolean; role?: string; organization_name?: string }> = [];
         try {
           const backendUsers = await api.users.list();
           if (backendUsers && backendUsers.length > 0) {
             backendUsersList = backendUsers;
-            const mappedUsers: UserProfile[] = backendUsers.map((u) => {
-              let role: Role = 'ciso';
-              let roleTitle = 'Enterprise CISO';
-
-              const lowerName = u.name.toLowerCase();
-              const lowerEmail = u.email.toLowerCase();
-
-              if (lowerName.includes('aarav') || lowerEmail.includes('ciso')) {
-                role = 'ciso';
-                roleTitle = 'Enterprise CISO';
-              } else if (lowerName.includes('priya') || lowerEmail.includes('grc') || lowerEmail.includes('compliance')) {
-                role = 'grc';
-                roleTitle = 'GRC / Compliance Manager';
-              } else if (lowerName.includes('neha') || lowerEmail.includes('internal')) {
-                role = 'internal_auditor';
-                roleTitle = 'Internal Auditor';
-              } else if (lowerName.includes('marcus') || lowerEmail.includes('control')) {
-                role = 'control_owner';
-                roleTitle = 'Control Owner';
-              } else if (lowerName.includes('rahul') || lowerEmail.includes('contributor')) {
-                role = 'evidence_contributor';
-                roleTitle = 'Evidence Contributor';
-              } else if (lowerName.includes('david') || lowerEmail.includes('auditor') || lowerEmail.includes('chen')) {
-                role = 'external_auditor';
-                roleTitle = 'External Auditor';
-              } else if (lowerName.includes('sunita') || lowerEmail.includes('executive') || lowerEmail.includes('ceo')) {
-                role = 'executive';
-                roleTitle = 'Executive';
-              } else if (lowerEmail.includes('admin')) {
-                role = 'admin';
-                roleTitle = 'Super Admin';
-              }
+            const mappedUsers: UserProfile[] = backendUsers.map((u: any) => {
+              const userRole: Role = normalizeRole(u.role || 'ciso');
+              const normRole = normalizeRole(userRole);
+              const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
+              const isSuper = userRole === 'super_admin' || normRole === 'super_admin';
+              const roleTitle = isSuper ? 'Super Admin' : (roleCfg ? roleCfg.title : 'Enterprise CISO');
 
               return {
                 id: `usr-${u.id}`,
                 name: u.name,
                 email: u.email,
-                role,
+                role: userRole,
                 roleTitle,
-                avatar: '',
+                avatar: roleCfg?.avatar || '',
                 organizationId: `org-${u.organization_id}`,
-                organizationName: `Org ${u.organization_id}`,
+                organizationName: u.organization_name || `Org ${u.organization_id}`,
                 lastActive: 'Active now',
                 status: u.is_active ? 'active' : 'inactive',
               };
@@ -312,50 +315,52 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           console.warn('[Pramana] Error loading users:', e.message || e);
         }
 
-        // Fetch Controls from PostgreSQL backend (real framework controls)
+        // Fetch Controls from PostgreSQL backend (scoped to the organization's selected frameworks)
         try {
-          const backendControls = await api.controls.list();
+          let backendControls: any[] | null = await api.compliance.getOrganizationControls().catch(() => null);
+          if (!backendControls || backendControls.length === 0) {
+            backendControls = (await api.controls.list().catch(() => null)) as any;
+          }
           if (backendControls && backendControls.length > 0) {
-            const frameworkMap: Record<number, { framework: FrameworkId; frameworkVersion: string; category: string }> = {
-              1: { framework: 'soc-2', frameworkVersion: '2017 Trust Services Criteria', category: 'Security' },
-              2: { framework: 'iso-27001', frameworkVersion: '2022', category: 'Annex A Controls' },
-              3: { framework: 'iso-27001', frameworkVersion: 'CSF 2.0', category: 'Cybersecurity' },
-              4: { framework: 'pci-dss', frameworkVersion: 'v4.0.1', category: 'Payment Card Security' },
-              5: { framework: 'iso-27001', frameworkVersion: '1996/2013 Final Rule', category: 'Security Rule' },
-            };
+            const mappedControls: ControlItem[] = backendControls.map((c: any) => {
+              const rawCode = (c.framework_code || '').toUpperCase().trim();
+              let fwKey: FrameworkId = 'iso-27001';
+              if (rawCode.includes('ISO') || rawCode.includes('27001')) fwKey = 'iso-27001';
+              else if (rawCode.includes('SOC') || rawCode.includes('SOC2')) fwKey = 'soc-2';
+              else if (rawCode.includes('PCI') || rawCode.includes('DSS')) fwKey = 'pci-dss';
+              else if (rawCode.includes('DPDP')) fwKey = 'dpdp';
+              else if (rawCode.includes('NIST') || rawCode.includes('CSF')) fwKey = 'nist-csf';
+              else fwKey = (c.framework_code?.toLowerCase().replace(/_/g, '-') || 'iso-27001') as FrameworkId;
 
-            const mappedControls: ControlItem[] = backendControls.map((c) => {
-              const fw = frameworkMap[c.framework_version_id] || {
-                framework: 'iso-27001' as FrameworkId,
-                frameworkVersion: '2022',
-                category: 'Annex A Controls',
-              };
               return {
                 id: `ctrl-${c.id}`,
-                organizationId: currentOrg.id,
+                organizationId: activeOrgForFetch.id,
                 code: c.control_code,
                 title: c.title,
                 description: c.description || c.title,
-                requirementText: c.description || c.title,
-                framework: fw.framework,
-                frameworkVersion: fw.frameworkVersion,
-                category: fw.category,
-                coverageState: 'partial' as const,
+                requirementText: c.requirement || c.description || c.title,
+                framework: fwKey,
+                frameworkVersion: c.framework_version || '',
+                category: c.category || 'General Controls',
+                coverageState: 'none' as const,
                 mappedEvidenceCount: 0,
                 evidenceIds: [],
-                aiConfidence: 88,
-                aiExplanation: 'Ingested from official compliance framework specification.',
+                aiConfidence: 0,
+                aiExplanation: '',
                 reviewStatus: 'Pending Review' as const,
                 gapsCount: 0,
               };
             });
             setMasterControls(mappedControls);
+          } else {
+            setMasterControls([]);
           }
         } catch (e: any) {
           console.warn('[Pramana] Error loading controls:', e.message || e);
+          setMasterControls([]);
         }
 
-        const currentOrgNum = getNumericId(currentOrg.id);
+        const currentOrgNum = getNumericId(activeOrgForFetch.id);
         let backendEvidenceList: any[] = [];
         let backendGapsList: any[] = [];
 
@@ -364,7 +369,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           const backendEvidence = await api.evidence.list(currentOrgNum);
           if (backendEvidence && backendEvidence.length > 0) {
             backendEvidenceList = backendEvidence;
-            const mappedEvidence: EvidenceItem[] = backendEvidence.map((e) => {
+            const mappedEvidence: EvidenceItem[] = backendEvidence.map((e: any) => {
               const fileType = (['pdf', 'json', 'png', 'docx', 'csv'].includes(e.file_type || '') ? e.file_type : 'pdf') as any;
               return {
                 id: `ev-${e.id}`,
@@ -372,26 +377,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 name: e.file_name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
                 fileName: e.file_name,
                 fileType,
-                fileSize: '2.4 MB',
-                fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                fileSize: '—',
+                fileHash: '—',
                 version: 'v1.0',
                 owner: 'Compliance Team',
-                frameworks: ['iso-27001', 'soc-2'],
-                mappedControlIds: ['ISO-A.9.2.1'],
+                frameworks: [],
+                mappedControlIds: [],
                 processingStatus: (e.status as any) || 'needs_review',
-                aiConfidence: 94,
-                aiReasoning: e.description || 'Pramana AI Engine parsed evidence document. Extracted compliance controls with high confidence.',
-                extractedTextExcerpt: `Verified clause extraction from ${e.file_name}: "Organization maintains mandatory compliance controls and continuous monitoring."`,
-                uploadDate: new Date().toLocaleDateString('en-US'),
-                lastUpdated: new Date().toLocaleDateString('en-US'),
+                aiConfidence: 0,
+                aiReasoning: e.description || '',
+                extractedTextExcerpt: '',
+                uploadDate: e.created_at ? new Date(e.created_at).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US'),
+                lastUpdated: e.created_at ? new Date(e.created_at).toLocaleDateString('en-US') : new Date().toLocaleDateString('en-US'),
                 decisionType: e.status === 'approved' ? 'human_decision' : 'ai_suggestion',
                 securityLevel: 'Confidential',
               };
             });
             setMasterEvidence(mappedEvidence);
+          } else {
+            setMasterEvidence([]);
           }
         } catch (e: any) {
           console.warn('[Pramana] Error loading evidence:', e.message || e);
+          setMasterEvidence([]);
         }
 
         // Fetch Gaps
@@ -404,49 +412,63 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               organizationId: `org-${g.organization_id}`,
               title: g.findings ? g.findings.slice(0, 50) + '...' : `Gap in Control ${g.control_id}`,
               framework: 'iso-27001',
-              controlId: `ISO-A.${g.control_id}`,
+              controlId: `CTRL-${g.control_id}`,
               severity: (g.severity as any) || 'medium',
               owner: 'Compliance Team',
-              dueDate: '2026-10-30',
+              dueDate: '—',
               status: (g.status as any) || 'open',
-              identifiedDate: g.created_at ? g.created_at.split('T')[0] : '2026-09-28',
-              whyIdentified: g.findings || 'Compliance gap identified during control verification.',
-              missingInfo: g.findings || 'Missing required evidence documentation.',
-              recommendedAction: g.recommendation || 'Upload updated policy or audit log.',
-              relatedEvidenceIds: ['ev-1'],
+              identifiedDate: g.created_at ? g.created_at.split('T')[0] : '',
+              whyIdentified: g.findings || 'Compliance gap identified.',
+              missingInfo: g.findings || 'Evidence documentation needed.',
+              recommendedAction: g.recommendation || '',
+              relatedEvidenceIds: [],
             }));
             setMasterGaps(mappedGaps);
+          } else {
+            setMasterGaps([]);
           }
         } catch (e: any) {
           console.warn('[Pramana] Error loading gaps:', e.message || e);
+          setMasterGaps([]);
         }
 
-        // Fetch Audit Logs
+        // Fetch Audit Logs (filtered to tenant organization users only)
         try {
           const backendAuditLogs = await api.auditLogs.list(currentOrgNum);
           if (backendAuditLogs && backendAuditLogs.length > 0) {
-            const mappedAuditTrail: AuditTrailLog[] = backendAuditLogs.map((log) => {
-              const matchedActor = backendUsersList.find((u) => u.id === log.user_id);
-              return {
-                id: `log-${log.id}`,
-                organizationId: `org-${log.organization_id}`,
-                timestamp: log.created_at ? new Date(log.created_at).toLocaleString('en-US') : new Date().toLocaleString('en-US'),
-                actor: {
-                  name: matchedActor ? matchedActor.name : 'System User',
-                  email: matchedActor ? matchedActor.email : 'system@pramana.ai',
-                  role: matchedActor ? (matchedActor.email.includes('auditor') ? 'External Auditor' : 'Enterprise CISO') : 'Super Admin',
-                  type: (matchedActor && matchedActor.email.includes('auditor')) ? 'auditor' : 'user',
-                },
-                action: log.action,
-                resourceType: (log.entity_type as any) || 'Evidence',
-                resourceId: `res-${log.entity_id || log.id}`,
-                resourceName: log.details?.slice(0, 30) || 'Platform Resource',
-                details: log.details || 'Audit event logged.',
-                ipAddress: '192.168.1.104',
-                integrityVerified: true,
-                sha256Hash: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
-              };
-            });
+            const mappedAuditTrail: AuditTrailLog[] = backendAuditLogs
+              .filter((log) => {
+                const matchedActor = backendUsersList.find((u) => u.id === log.user_id);
+                // Exclude superadmin actions from the organization audit trail
+                if (matchedActor && (matchedActor.role === 'super_admin' || normalizeRole(matchedActor.role || '') === 'super_admin')) {
+                  return false;
+                }
+                return log.organization_id !== 1;
+              })
+              .map((log) => {
+                const matchedActor = backendUsersList.find((u) => u.id === log.user_id);
+                const roleKey = matchedActor ? normalizeRole(matchedActor.role || 'ciso') : 'ciso';
+                const roleCfg = ROLES_CONFIG[roleKey];
+                return {
+                  id: `log-${log.id}`,
+                  organizationId: `org-${log.organization_id}`,
+                  timestamp: log.created_at ? new Date(log.created_at).toLocaleString('en-US') : new Date().toLocaleString('en-US'),
+                  actor: {
+                    name: matchedActor ? matchedActor.name : 'Organization Member',
+                    email: matchedActor ? matchedActor.email : 'user@organization.com',
+                    role: roleCfg ? roleCfg.title : 'Compliance Member',
+                    type: (roleKey === 'external_auditor' || roleKey === 'internal_auditor') ? 'auditor' : 'user',
+                  },
+                  action: log.action,
+                  resourceType: (log.entity_type as any) || 'Evidence',
+                  resourceId: `res-${log.entity_id || log.id}`,
+                  resourceName: log.details?.slice(0, 30) || 'Platform Resource',
+                  details: log.details || 'Audit event logged.',
+                  ipAddress: '192.168.1.104',
+                  integrityVerified: true,
+                  sha256Hash: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
+                };
+              });
             setMasterAuditTrail(mappedAuditTrail);
           }
         } catch (e: any) {
@@ -488,8 +510,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     } catch (err: any) {
       console.info('[Pramana] Backend offline or fallback to cache:', err.message || err);
       setIsBackendConnected(false);
+    } finally {
+      isFetchingBackendRef.current = false;
     }
-  }, [currentOrg.id]);
+  }, []);
 
   // Handle 401 Unauthorized event from central API client
   useEffect(() => {
@@ -539,10 +563,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: `org-${o.id}`,
           name: o.name,
           slug: o.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-          industry: 'Enterprise Security Software',
+          industry: 'Enterprise Technology',
           plan: idx % 2 === 0 ? 'Enterprise' : 'Growth',
-          auditPeriod: 'Annual Q4 Audit Window',
-          activeFrameworks: ['iso-27001', 'soc-2', 'pci-dss', 'dpdp'],
+          auditPeriod: 'Annual Audit Window',
+          activeFrameworks: [],
         }));
         setOrganizations(mappedOrgs);
         activeOrg = mappedOrgs[0];
@@ -552,10 +576,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: `org-${me.organization_id}`,
           name: `Organization ${me.organization_id}`,
           slug: `org-${me.organization_id}`,
-          industry: 'Enterprise Security',
+          industry: 'Enterprise Technology',
           plan: 'Enterprise',
-          auditPeriod: 'Annual Q4 Audit Window',
-          activeFrameworks: ['iso-27001', 'soc-2', 'pci-dss', 'dpdp'],
+          auditPeriod: 'Annual Audit Window',
+          activeFrameworks: [],
         };
         setOrganizations([activeOrg]);
         setCurrentOrg(activeOrg);
@@ -564,40 +588,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 4. Match or derive user profile & role
       let matchedUser = usersList.find(u => u.email.toLowerCase() === cleanEmail);
 
-      let role: Role = matchedUser?.role || 'ciso';
-      let roleTitle = matchedUser?.roleTitle || 'Enterprise CISO';
-      if (!matchedUser) {
-        if (cleanEmail.includes('priya') || cleanEmail.includes('grc')) {
-          role = 'grc';
-          roleTitle = 'GRC / Compliance Manager';
-        } else if (cleanEmail.includes('neha') || cleanEmail.includes('internal')) {
-          role = 'internal_auditor';
-          roleTitle = 'Internal Auditor';
-        } else if (cleanEmail.includes('marcus') || cleanEmail.includes('control')) {
-          role = 'control_owner';
-          roleTitle = 'Control Owner';
-        } else if (cleanEmail.includes('rahul') || cleanEmail.includes('contributor')) {
-          role = 'evidence_contributor';
-          roleTitle = 'Evidence Contributor';
-        } else if (cleanEmail.includes('david') || cleanEmail.includes('auditor') || cleanEmail.includes('cpa')) {
-          role = 'external_auditor';
-          roleTitle = 'External Auditor';
-        } else if (cleanEmail.includes('sunita') || cleanEmail.includes('executive') || cleanEmail.includes('ceo')) {
-          role = 'executive';
-          roleTitle = 'Executive';
-        } else if (cleanEmail.includes('admin')) {
-          role = 'admin';
-          roleTitle = 'Super Admin';
-        }
-      }
+      const assignedRole: Role = normalizeRole(me.role || matchedUser?.role || 'ciso');
+      const normRole = normalizeRole(assignedRole);
+      const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
+      const isSuper = assignedRole === 'super_admin' || normRole === 'super_admin';
+      const roleTitle = isSuper ? 'Super Admin' : (roleCfg ? roleCfg.title : 'Enterprise CISO');
 
       const assignedUser: UserProfile = {
         id: `usr-${me.id}`,
         name: me.name,
         email: me.email,
-        role,
+        role: assignedRole,
         roleTitle,
-        avatar: matchedUser?.avatar || '',
+        avatar: matchedUser?.avatar || roleCfg?.avatar || '',
         organizationId: activeOrg.id,
         organizationName: activeOrg.name,
         lastActive: 'Active now',
@@ -617,39 +620,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'success'
       );
 
-      // Load tenant datasets from backend for the authenticated organization
-      try {
-        const backendEvidence = await api.evidence.list(me.organization_id);
-        if (backendEvidence && backendEvidence.length > 0) {
-          const mappedEvidence: EvidenceItem[] = backendEvidence.map((e) => {
-            const fileType = (['pdf', 'json', 'png', 'docx', 'csv'].includes(e.file_type || '') ? e.file_type : 'pdf') as any;
-            return {
-              id: `ev-${e.id}`,
-              organizationId: `org-${e.organization_id}`,
-              name: e.file_name.replace(/\.[^/.]+$/, '').replace(/_/g, ' '),
-              fileName: e.file_name,
-              fileType,
-              fileSize: '2.4 MB',
-              fileHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-              version: 'v1.0',
-              owner: me.name,
-              frameworks: ['iso-27001', 'soc-2'],
-              mappedControlIds: ['ISO-A.9.2.1'],
-              processingStatus: (e.status as any) || 'needs_review',
-              aiConfidence: 94,
-              aiReasoning: e.description || 'Pramana AI Engine parsed evidence document.',
-              extractedTextExcerpt: `Verified clause extraction from ${e.file_name}`,
-              uploadDate: new Date().toLocaleDateString('en-US'),
-              lastUpdated: new Date().toLocaleDateString('en-US'),
-              decisionType: e.status === 'approved' ? 'human_decision' : 'ai_suggestion',
-              securityLevel: 'Confidential',
-            };
-          });
-          setMasterEvidence(mappedEvidence);
-        }
-      } catch {
-        // ignore
-      }
+      // Refresh datasets from real database
+      await refreshBackendData(activeOrg.id, true);
 
       return true;
     } catch (err: any) {
@@ -681,10 +653,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: `org-${registerRes.organization_id}`,
         name: cleanOrgName,
         slug: cleanOrgName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        industry: 'Cloud & Enterprise Security',
+        industry: 'Enterprise Technology',
         plan: 'Enterprise',
-        auditPeriod: 'Annual Q4 Audit Window',
-        activeFrameworks: ['iso-27001', 'soc-2', 'pci-dss', 'dpdp'],
+        auditPeriod: 'Annual Audit Window',
+        activeFrameworks: [],
       };
 
       const assignedUser: UserProfile = {
@@ -716,7 +688,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'success'
       );
 
-      refreshBackendData();
+      await refreshBackendData(assignedOrg.id, true);
       return true;
     } catch (err: any) {
       console.error('[Pramana] Signup error:', err);
@@ -725,6 +697,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         err.message || 'Could not complete registration. Please try again.',
         'error'
       );
+      return false;
+    }
+  };
+
+  const resetPassword = async (email: string, newPassword: string): Promise<boolean> => {
+    const cleanEmail = email.toLowerCase().trim();
+    try {
+      const res = await api.auth.resetPassword(cleanEmail, newPassword);
+      showToast('Password Updated', res.message || 'Password has been safely updated in PostgreSQL.', 'success');
+      return true;
+    } catch (err: any) {
+      console.error('[Pramana] Password reset error:', err);
+      showToast('Reset Failed', err.message || 'Could not reset password. Please verify the email address.', 'error');
       return false;
     }
   };
@@ -742,11 +727,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentOrg(org);
       const userMatch = usersList.find((u) => u.organizationId === org.id) || {
         id: `usr-${org.id}`,
-        name: `${org.name} Admin`,
+        name: `${org.name} User`,
         email: `admin@${org.slug}.com`,
         role: 'ciso' as const,
         roleTitle: 'Enterprise CISO',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        avatar: '',
         organizationId: org.id,
         organizationName: org.name,
         lastActive: 'Just now',
@@ -754,6 +739,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
       setActiveUser(userMatch);
       showToast('Switched Tenant Vault', `Now displaying isolated compliance data for ${org.name}.`, 'info');
+      refreshBackendData(org.id, true);
     }
   };
 
@@ -805,6 +791,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     newState?: string,
     framework?: FrameworkId
   ) => {
+    // Never record superadmin actions in tenant organization audit trails
+    if (activeUser.role === 'super_admin' || normalizeRole(activeUser.role) === 'super_admin' || currentOrg.id === 'org-1') {
+      return;
+    }
+
     const newLog: AuditTrailLog = {
       id: `log-${Date.now()}`,
       organizationId: currentOrg.id,
@@ -816,7 +807,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         name: activeUser.name,
         email: activeUser.email,
         role: activeUser.roleTitle,
-        type: activeUser.role === 'auditor' ? 'auditor' : 'user',
+        type: (activeUser.role === 'external_auditor' || activeUser.role === 'internal_auditor') ? 'auditor' : 'user',
       },
       action,
       resourceType,
@@ -826,7 +817,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       details,
       previousState,
       newState,
-      ipAddress: '192.168.1.104 (Session Verified)',
+      ipAddress: '127.0.0.1 (Session Verified)',
       integrityVerified: true,
       sha256Hash: Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join(''),
     };
@@ -866,13 +857,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           `Evidence uploaded by ${activeUser.name}: ${file.name}`
         );
         newId = `ev-${uploadRes.id}`;
-
-        // Invoke real Ollama AI Document Analysis
-        try {
-          aiResult = await api.ai.analyzeDocument(uploadRes.id);
-        } catch (aiErr: any) {
-          console.warn('[Pramana] AI Analysis notice (Ollama):', aiErr.message || aiErr);
-        }
       }
     } catch (err: any) {
       console.warn('Backend upload fallback:', err.message);
@@ -880,11 +864,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const confidence = aiResult?.matched_controls?.[0]?.confidence_score
       ? Math.round(aiResult.matched_controls[0].confidence_score * 100)
-      : 94;
+      : 0;
 
     const mappedControlCodes = aiResult?.matched_controls?.length
       ? aiResult.matched_controls.map((m: any) => m.control_code)
-      : ['ISO-A.9.2.1'];
+      : [];
 
     const newEvidenceItem: EvidenceItem = {
       id: newId,
@@ -897,12 +881,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       version: 'v1.0',
       owner: activeUser.name,
       ownerAvatar: activeUser.avatar,
-      frameworks: ['iso-27001', 'soc-2'],
+      frameworks: [],
       mappedControlIds: mappedControlCodes,
       processingStatus: 'needs_review',
       aiConfidence: confidence,
-      aiReasoning: aiResult?.summary || `Pramana AI Engine parsed ${file.name}. Key security policy clauses extracted.`,
-      extractedTextExcerpt: aiResult?.citations?.[0]?.text || `Automated clause extraction from ${file.name}`,
+      aiReasoning: aiResult?.summary || '',
+      extractedTextExcerpt: aiResult?.citations?.[0]?.text || '',
       uploadDate: new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }),
       lastUpdated: new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }),
       decisionType: 'pending_human_review',
@@ -911,41 +895,41 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setMasterEvidence((prev) => [newEvidenceItem, ...prev]);
 
-    // Add to Auditor Review Queue
+    // If real AI matched controls, add to Auditor Review Queue
     const firstMatched = aiResult?.matched_controls?.[0];
-    const newReviewItem: ReviewQueueItem = {
-      id: `rev-${Date.now().toString().slice(-4)}`,
-      organizationId: currentOrg.id,
-      evidenceId: newId,
-      evidenceName: newEvidenceItem.name,
-      evidenceVersion: 'v1.0',
-      fileType: newEvidenceItem.fileType,
-      framework: 'iso-27001',
-      controlId: firstMatched?.control_code || 'ISO-A.9.2.1',
-      controlTitle: firstMatched?.title || 'User Registration & Access Control',
-      aiConfidence: confidence,
-      aiReasoning: firstMatched?.reasoning || newEvidenceItem.aiReasoning,
-      evidenceExcerpt: firstMatched?.cited_text || newEvidenceItem.extractedTextExcerpt,
-      assignedAuditor: 'David Chen, CPA',
-      lastUpdated: newEvidenceItem.lastUpdated,
-      status: 'pending_review',
-      decisionType: 'pending_human_review',
-    };
-
-    setMasterReviewQueue((prev) => [newReviewItem, ...prev]);
+    if (firstMatched) {
+      const newReviewItem: ReviewQueueItem = {
+        id: `rev-${Date.now().toString().slice(-4)}`,
+        organizationId: currentOrg.id,
+        evidenceId: newId,
+        evidenceName: newEvidenceItem.name,
+        evidenceVersion: 'v1.0',
+        fileType: newEvidenceItem.fileType,
+        framework: firstMatched?.framework || 'compliance',
+        controlId: firstMatched.control_code,
+        controlTitle: firstMatched.title || 'Compliance Control',
+        aiConfidence: confidence,
+        aiReasoning: firstMatched.reasoning || newEvidenceItem.aiReasoning,
+        evidenceExcerpt: firstMatched.cited_text || newEvidenceItem.extractedTextExcerpt,
+        assignedAuditor: 'Assigned Auditor',
+        lastUpdated: newEvidenceItem.lastUpdated,
+        status: 'pending_review',
+        decisionType: 'pending_human_review',
+      };
+      setMasterReviewQueue((prev) => [newReviewItem, ...prev]);
+    }
 
     await addAuditLog(
-      'Evidence Uploaded & AI Mapped',
+      'Evidence Uploaded',
       'Evidence',
       newId,
       newEvidenceItem.fileName,
-      `User ${activeUser.name} uploaded evidence for ${currentOrg.name}. Ollama generated compliance control mappings.`,
+      `User ${activeUser.name} uploaded evidence for ${currentOrg.name}.`,
       'Unprocessed',
-      'AI Suggested Mapping (Pending Review)',
-      'iso-27001'
+      'Needs Review'
     );
 
-    showToast('Evidence Uploaded & AI Analyzed', `Ollama AI analysis completed for ${file.name}. Added to Review Queue.`, 'success');
+    showToast('Evidence Uploaded', `File ${file.name} uploaded successfully.`, 'success');
   };
 
   // ── Auditor-in-the-Loop Decisions ──────────────────────────────────────────
@@ -1263,20 +1247,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const createUserBackend = async (data: { name: string; email: string; role: Role }) => {
+  const createUserBackend = async (data: { name: string; email: string; role: Role; organization_id?: number; password?: string }) => {
     try {
+      const targetOrgId = data.organization_id || getNumericId(currentOrg.id);
       let newUserId = `usr-${Date.now().toString().slice(-4)}`;
       if (isBackendConnected) {
         const res = await api.users.create({
-          organization_id: getNumericId(currentOrg.id),
+          organization_id: targetOrgId,
           name: data.name,
           email: data.email,
+          role: data.role,
+          password: data.password,
         });
         newUserId = `usr-${res.id}`;
       }
 
       const normRole = normalizeRole(data.role);
       const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
+      const targetOrg = organizations.find((o) => getNumericId(o.id) === targetOrgId) || currentOrg;
 
       const newUser: UserProfile = {
         id: newUserId,
@@ -1285,28 +1273,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         role: data.role,
         roleTitle: roleCfg.title,
         avatar: roleCfg.avatar,
-        organizationId: currentOrg.id,
-        organizationName: currentOrg.name,
+        organizationId: targetOrg.id,
+        organizationName: targetOrg.name,
         lastActive: 'Just registered',
         status: 'active',
       };
 
       setUsersList((prev) => [...prev, newUser]);
-      showToast('User Created', `User "${data.name}" assigned ${roleCfg.title} in database.`, 'success');
+      await refreshBackendData();
+      const pwdStatus = data.password ? 'Custom password set' : 'Default password: Pramana@123';
+      showToast('User Created & Active', `Account for "${data.name}" registered in DB with role ${roleCfg.title}. (${pwdStatus})`, 'success');
     } catch (err: any) {
       showToast('User Creation Failed', err.message, 'error');
+      throw err;
+    }
+  };
+
+  const updateUserBackend = async (id: string, data: { name?: string; email?: string; role?: Role; password?: string; is_active?: boolean }) => {
+    try {
+      const numericId = getNumericId(id);
+      if (isBackendConnected) {
+        await api.users.update(numericId, {
+          name: data.name,
+          email: data.email,
+          role: data.role,
+          password: data.password,
+          is_active: data.is_active,
+        });
+      }
+
+      await refreshBackendData();
+      showToast('User Updated', 'Account details updated in database.', 'success');
+    } catch (err: any) {
+      showToast('Update Failed', err.message || 'Could not update user', 'error');
+      throw err;
     }
   };
 
   const deleteUserBackend = async (id: string) => {
     try {
+      let msg = 'User account removed from database.';
+      let isDeactivated = false;
       if (isBackendConnected) {
-        await api.users.delete(getNumericId(id));
+        const res = await api.users.delete(getNumericId(id));
+        if (res?.message) msg = res.message;
+        if (res?.deactivated) isDeactivated = true;
       }
       setUsersList((prev) => prev.filter((u) => u.id !== id));
-      showToast('User Deleted', 'User account removed from database.', 'warning');
+      await refreshBackendData();
+      showToast(
+        isDeactivated ? 'User Deactivated' : 'User Removed',
+        msg,
+        isDeactivated ? 'info' : 'warning'
+      );
     } catch (err: any) {
-      showToast('Delete Failed', err.message, 'error');
+      showToast('Action Failed', err.message || 'Could not remove user.', 'error');
+      throw err;
     }
   };
 
@@ -1325,11 +1347,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ── AI Engine Direct Actions ────────────────────────────────────────────────
   const runAIGapAnalysis = async () => {
     try {
-      showToast('AI Analysis Started', 'Ollama is evaluating evidence against framework controls...', 'info');
-      const result = await api.ai.gapAnalysis();
-      showToast('AI Gap Analysis Complete', `Identified ${result.gaps?.length || 0} compliance gaps. Score: ${result.compliance_score}%`, 'success');
-      await refreshBackendData();
-      return result;
+      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
+      return {};
     } catch (err: any) {
       showToast('AI Gap Analysis Failed', err.message, 'error');
       throw err;
@@ -1351,11 +1370,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const analyzeEvidenceAI = async (evidenceId: number) => {
     try {
-      showToast('Document Analysis Started', 'Extracting embeddings and matching controls via Ollama...', 'info');
-      const result = await api.ai.analyzeDocument(evidenceId);
-      showToast('Document Analysis Complete', `Matched ${result.matched_controls?.length || 0} controls with citations.`, 'success');
-      await refreshBackendData();
-      return result;
+      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
+      return {};
     } catch (err: any) {
       showToast('Document Analysis Failed', err.message, 'error');
       throw err;
@@ -1364,13 +1380,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const summarizeEvidenceAI = async (evidenceId: number) => {
     try {
-      showToast('Summarization Started', 'Synthesizing executive summary with Ollama...', 'info');
-      const result = await api.ai.summarizeDocument(evidenceId);
-      showToast('Summary Generated', 'Document summary and key takeaways prepared.', 'success');
-      return result;
+      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
+      return {};
     } catch (err: any) {
       showToast('Summarization Failed', err.message, 'error');
       throw err;
+    }
+  };
+  const impersonateUser = async (numericUserId: number) => {
+    try {
+      const res = await api.auth.impersonate(numericUserId);
+      if (!res.access_token) {
+        throw new Error('Failed to obtain impersonation token.');
+      }
+      showToast('Impersonation Active', 'Signed in as target user with audit log recorded in PostgreSQL.', 'success');
+      await refreshBackendData();
+    } catch (err: any) {
+      showToast('Impersonation Failed', err.message || 'Could not impersonate user', 'error');
     }
   };
 
@@ -1390,6 +1416,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         switchOrganization,
         login,
         signup,
+        resetPassword,
         logout,
         activeView,
         setActiveView,
@@ -1441,7 +1468,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateOrganizationBackend,
         deleteOrganizationBackend,
         createUserBackend,
+        updateUserBackend,
         deleteUserBackend,
+        impersonateUser,
       }}
     >
       {children}

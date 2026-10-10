@@ -6,7 +6,6 @@ import { ActiveView } from '../../types';
 import {
   hasPageAccess,
   getPageAccess,
-  getAccessBadge,
   getRoleDefaultPage,
   ROLES_CONFIG,
   normalizeRole,
@@ -64,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
 
   const allWorkspaceNavItems = [
     { id: 'overview' as ActiveView, label: 'Overview', icon: LayoutDashboard },
+    { id: 'select-frameworks' as ActiveView, label: 'Select Frameworks', icon: Layers },
     { id: 'evidence' as ActiveView, label: 'Evidence Library', icon: FileText },
     { id: 'controls' as ActiveView, label: 'Control Center', icon: ShieldCheck },
     {
@@ -84,20 +84,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
     { id: 'reports' as ActiveView, label: 'Reports', icon: BarChart3 },
   ];
 
+  const isSuperAdmin = activeUser.role === 'super_admin' || normalizeRole(activeUser.role) === 'super_admin';
+
+  const superAdminNavItems = [
+    { id: 'super-admin' as ActiveView, label: 'Overview', icon: Crown },
+    { id: 'admin-organizations' as ActiveView, label: 'Organizations', icon: Building2 },
+    { id: 'admin-frameworks' as ActiveView, label: 'Frameworks', icon: Layers },
+    { id: 'admin-users' as ActiveView, label: 'Users', icon: Users },
+  ];
+
   const allManagementNavItems = [
     { id: 'frameworks' as ActiveView, label: 'Frameworks', icon: Layers },
-    ...(activeUser.role === 'admin' ? [{ id: 'super-admin' as ActiveView, label: 'Super Admin Console', icon: Crown }] : []),
+    ...(isSuperAdmin ? [{ id: 'super-admin' as ActiveView, label: 'Super Admin Console', icon: Crown }] : []),
     { id: 'settings' as ActiveView, label: 'Settings', icon: Settings },
   ];
 
   // RBAC Matrix Enforcement: Hide pages marked as ❌ for the active user's role
-  const workspaceNavItems = allWorkspaceNavItems.filter((item) =>
+  const workspaceNavItems = isSuperAdmin ? [] : allWorkspaceNavItems.filter((item) =>
     hasPageAccess(activeUser.role, item.id)
   );
 
-  const managementNavItems = allManagementNavItems.filter((item) =>
-    hasPageAccess(activeUser.role, item.id)
-  );
+  const managementNavItems = isSuperAdmin
+    ? superAdminNavItems
+    : allManagementNavItems.filter((item) =>
+        hasPageAccess(activeUser.role, item.id)
+      );
 
   return (
     <aside
@@ -193,27 +204,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
                 );
               })}
             </nav>
-
-            {/* AI Compliance Copilot Button */}
-            <div className="pt-2">
-              <button
-                onClick={() => setIsAIChatOpen(true)}
-                className={`flex items-center w-full px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-500/10 via-violet-500/10 to-purple-500/10 border border-indigo-200/60 text-indigo-700 hover:from-indigo-500/20 hover:to-purple-500/20 transition-all ${
-                  collapsed ? 'justify-center' : 'justify-between'
-                }`}
-                title={collapsed ? 'Pramana AI Copilot' : undefined}
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <Sparkles className={`shrink-0 text-indigo-600 ${collapsed ? 'w-5 h-5' : 'w-4 h-4'} animate-pulse`} />
-                  {!collapsed && <span className="truncate">AI Compliance Copilot</span>}
-                </div>
-                {!collapsed && (
-                  <span className="px-1.5 py-0.2 text-[9px] font-bold rounded bg-indigo-100 text-indigo-700">
-                    Ollama
-                  </span>
-                )}
-              </button>
-            </div>
           </div>
         )}
 
@@ -261,8 +251,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
 
       {/* Bottom Merchant Organization Selector & User Profile */}
       <div className="p-3 border-t border-slate-200 bg-slate-50 space-y-2 shrink-0">
-        {/* Merchant Org Switcher Dropdown */}
-        {!collapsed && (
+        {/* Merchant Org Switcher Dropdown (non-SuperAdmin) */}
+        {!collapsed && !isSuperAdmin && (
           <div className="relative">
             <button
               onClick={() => setShowOrgMenu(!showOrgMenu)}
@@ -283,7 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, setCollapsed }) => 
             {showOrgMenu && (
               <div className="absolute bottom-12 left-0 w-60 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 z-50 text-slate-700">
                 <div className="px-3 py-1.5 border-b border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Merchant Organization Vaults</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Organization Vault</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">Isolated tenant datasets:</p>
                 </div>
                 <div className="py-1 space-y-1">

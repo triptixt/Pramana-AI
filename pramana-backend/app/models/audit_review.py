@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -11,7 +12,7 @@ class AuditReview(Base):
 
     audit_id = Column(
         Integer,
-        ForeignKey("audits.id"),
+        ForeignKey("audits.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -41,3 +42,7 @@ class AuditReview(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    audit = relationship("Audit", back_populates="reviews")
+    reviewer = relationship("User", back_populates="audit_reviews")

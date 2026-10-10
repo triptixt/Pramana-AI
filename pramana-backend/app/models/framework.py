@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -17,6 +19,12 @@ class Framework(Base):
         nullable=False
     )
 
+    version = Column(
+        String,
+        nullable=True,
+        default="1.0"
+    )
+
     code = Column(
         String,
         unique=True,
@@ -28,3 +36,53 @@ class Framework(Base):
         Text,
         nullable=True
     )
+
+    category = Column(
+        String(100),
+        nullable=True,
+        default="Information Security & Cyber"
+    )
+
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+
+    file_path = Column(
+        String,
+        nullable=True
+    )
+
+    file_name = Column(
+        String,
+        nullable=True
+    )
+
+    status = Column(
+        String,
+        nullable=False,
+        default="pending"
+    )
+
+    error_message = Column(
+        Text,
+        nullable=True
+    )
+
+    total_controls = Column(
+        Integer,
+        default=0,
+        nullable=False
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=True
+    )
+
+    # Relationships
+    versions = relationship("FrameworkVersion", back_populates="framework", cascade="all, delete-orphan")
+    organization_frameworks = relationship("OrganizationFramework", back_populates="framework", cascade="all, delete-orphan")
+    audits = relationship("Audit", back_populates="framework")

@@ -19,13 +19,12 @@ import {
 } from 'lucide-react';
 import { AuditTrailLog } from '../../types';
 
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 
 export const AuditTrailView: React.FC = () => {
   const { auditTrailList, setSelectedAuditLogId, showToast, activeUser } = useApp();
 
   const access = getPageAccess(activeUser.role, 'audit-trail');
-  const accessBadge = getAccessBadge(access);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedResourceType, setSelectedResourceType] = useState<string>('all');
@@ -48,52 +47,6 @@ export const AuditTrailView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Role Access Scope Notice */}
-      {access === 'Own activity' && (
-        <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300 text-slate-800 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <UserCheck className="w-4 h-4 text-slate-600 shrink-0" />
-            <div>
-              <span className="font-bold">Own Activity Only ({activeUser.roleTitle}): </span>
-              <span>Showing time-stamped actions and file uploads initiated by your authenticated account.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-slate-700 font-bold border border-slate-300 text-[10px] shrink-0">
-            Own Activity
-          </span>
-        </div>
-      )}
-
-      {access === 'Assigned scope' && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Scope Audit Trail ({activeUser.roleTitle}): </span>
-              <span>Ledger events restricted to changes on your assigned controls and uploaded artifacts.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-amber-800 font-bold border border-amber-200 text-[10px] shrink-0">
-            Assigned Scope
-          </span>
-        </div>
-      )}
-
-      {access === 'Audit scope' && (
-        <div className="p-3.5 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Lock className="w-4 h-4 text-cyan-600 shrink-0" />
-            <div>
-              <span className="font-bold">Audit Scope Verification ({activeUser.roleTitle}): </span>
-              <span>Immutable cryptographic event records within the certified audit period.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-cyan-700 font-bold border border-cyan-200 text-[10px] shrink-0">
-            Audit Scope
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -104,9 +57,6 @@ export const AuditTrailView: React.FC = () => {
                 SHA-256 Ledger
               </span>
             </h1>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-              {accessBadge.label}
-            </span>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
             Time-stamped, cryptographically signed log of every evidence upload, AI mapping, and human auditor approval.

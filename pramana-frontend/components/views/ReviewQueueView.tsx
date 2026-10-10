@@ -19,13 +19,12 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { ReviewQueueItem } from '../../types';
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 
 export const ReviewQueueView: React.FC = () => {
   const { reviewQueueList, setSelectedReviewItem, setSelectedEvidenceId, activeUser } = useApp();
 
   const access = getPageAccess(activeUser.role, 'review-queue');
-  const accessBadge = getAccessBadge(access);
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'high_confidence' | 'low_confidence' | 'evidence_requested'>('all');
 
@@ -47,31 +46,12 @@ export const ReviewQueueView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Role Access Scope Notice if Assigned Items */}
-      {access === 'Assigned items' && (
-        <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Review Scope ({activeUser.roleTitle}): </span>
-              <span>Showing review and attestation queue items routed specifically to your audit assignment.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-bold border border-indigo-200 text-[10px] shrink-0">
-            Assigned Items
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
           <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             Auditor Review Queue
           </h1>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-            {accessBadge.label}
-          </span>
         </div>
         <p className="text-xs md:text-sm text-slate-500 mt-1">
           Authorized human auditor decision portal for validating AI-suggested compliance control mappings.

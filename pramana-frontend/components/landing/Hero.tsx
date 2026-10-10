@@ -2,14 +2,14 @@
 
 import React from 'react';
 import { useApp } from '../../lib/context';
-import { 
-  ShieldCheck, 
-  Sparkles, 
-  ArrowRight, 
-  Lock, 
-  CheckCircle2, 
-  Layers, 
-  FileCheck, 
+import {
+  ShieldCheck,
+  Sparkles,
+  ArrowRight,
+  Lock,
+  CheckCircle2,
+  Layers,
+  FileCheck,
   ShieldAlert,
   Building2,
   Clock
@@ -21,7 +21,7 @@ export const PublicHero: React.FC = () => {
   return (
     <section className="relative pt-12 pb-20 md:pt-20 md:pb-28 overflow-hidden bg-gradient-to-b from-white via-[#FAF9F6] to-[#FAF9F6]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        
+
         {/* Top Announcement Pill */}
         <div className="flex justify-center mb-6">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold shadow-2xs">
@@ -50,22 +50,11 @@ export const PublicHero: React.FC = () => {
           {/* Action CTAs */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
             <button
-              onClick={() => {
-                setAuthModalMode('signup');
-                setIsAuthModalOpen(true);
-              }}
+              onClick={() => setIsAuthModalOpen(true)}
               className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-extrabold text-sm shadow-xl shadow-indigo-900/25 hover:from-indigo-700 hover:to-indigo-800 transition-all flex items-center justify-center gap-3 cursor-pointer"
             >
-              <span>Initialize Organization Vault</span>
+              <span>Sign In to Compliance Vault</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => login('aarav.mehta@acme.com', 'Password123!', 'org-acme')}
-              className="w-full sm:w-auto px-8 py-4 rounded-2xl border border-slate-300 bg-white font-extrabold text-sm text-slate-800 hover:bg-slate-50 hover:border-slate-400 shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Building2 className="w-4 h-4 text-indigo-600" />
-              <span>Explore Demo Tenant (Acme Inc.)</span>
             </button>
           </div>
 
@@ -95,7 +84,7 @@ export const PublicHero: React.FC = () => {
                 <div className="w-3 h-3 rounded-full bg-rose-400" />
                 <div className="w-3 h-3 rounded-full bg-amber-400" />
                 <div className="w-3 h-3 rounded-full bg-emerald-400" />
-                <span className="font-mono text-[11px] text-slate-500 ml-2">https://app.pramana.ai/org-acme/dashboard</span>
+                <span className="font-mono text-[11px] text-slate-500 ml-2">https://app.pramana.ai/org/dashboard</span>
               </div>
               <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
                 TENANT DATA ISOLATED

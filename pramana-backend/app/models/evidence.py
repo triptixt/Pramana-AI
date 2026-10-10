@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -38,3 +39,10 @@ class Evidence(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="evidence")
+    uploader = relationship("User", back_populates="evidence_uploaded")
+    versions = relationship("EvidenceVersion", back_populates="evidence", cascade="all, delete-orphan")
+    control_mappings = relationship("EvidenceControlMapping", back_populates="evidence", cascade="all, delete-orphan")
+    ai_runs = relationship("AIRun", back_populates="evidence")

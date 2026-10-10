@@ -42,6 +42,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # =========================================================
+from app.services.rbac_service import get_user_effective_permissions
+
+# =========================================================
 # CREATE EVIDENCE
 # =========================================================
 
@@ -57,6 +60,12 @@ def create_evidence(
     organization_id and uploaded_by are NOT trusted from frontend data.
     They are always taken from the authenticated user.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "upload_evidence" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'upload_evidence' required"
+        )
 
     new_evidence = Evidence(
         organization_id=current_user.organization_id,
@@ -108,6 +117,12 @@ def upload_file(
     uploaded_by and organization_id are automatically taken
     from the authenticated JWT user.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "upload_evidence" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'upload_evidence' required"
+        )
 
     if not file.filename:
         raise HTTPException(
@@ -162,53 +177,6 @@ def upload_file(
     db.refresh(new_evidence)
 
     # -----------------------------------------------------
-    # Control lookup
-    # -----------------------------------------------------
-    #
-    # IMPORTANT:
-    # Control does NOT have organization_id.
-    #
-    # Therefore we must NOT do:
-    #
-    # Control.organization_id == current_user.organization_id
-    #
-    # For now, get an available control.
-    #
-    # Organization-specific framework/control selection
-    # should later be implemented through the existing
-    # organization_frameworks/framework_versions relationship.
-    # -----------------------------------------------------
-
-    control = db.query(Control).first()
-
-    mapping_created = None
-    ai_confidence = None
-
-    if control:
-        # Temporary mapping value.
-        # This will be replaced by actual document analysis.
-        ai_confidence = 0.94
-
-        mapping = EvidenceControlMapping(
-            evidence_id=new_evidence.id,
-            control_id=control.id,
-            mapping_type="ai_suggested",
-            confidence_score=ai_confidence,
-            mapping_status="pending",
-            notes=(
-                f"Candidate mapping generated for file "
-                f"{file.filename} against control "
-                f"{control.control_code}."
-            ),
-        )
-
-        db.add(mapping)
-        db.commit()
-        db.refresh(mapping)
-
-        mapping_created = mapping.id
-
-    # -----------------------------------------------------
     # Audit Log
     # -----------------------------------------------------
 
@@ -237,10 +205,11 @@ def upload_file(
         "file_type": new_evidence.file_type,
         "description": new_evidence.description,
         "status": new_evidence.status,
-        "mapping_id": mapping_created,
-        "ai_confidence": ai_confidence,
+        "mapping_id": None,
+        "ai_confidence": None,
         "message": "File uploaded successfully",
     }
+
 
 
 # =========================================================
@@ -256,6 +225,12 @@ def get_evidence(
     Return only evidence belonging to the logged-in user's
     organization.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "view_evidence" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'view_evidence' required"
+        )
 
     evidence = (
         db.query(Evidence)
@@ -283,6 +258,12 @@ def get_single_evidence(
     Return evidence only if it belongs to the current user's
     organization.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "view_evidence" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'view_evidence' required"
+        )
 
     evidence = (
         db.query(Evidence)
@@ -315,10 +296,13 @@ def update_evidence(
 ):
     """
     Update evidence only within the current user's organization.
-
-    organization_id and uploaded_by cannot be changed through
-    the frontend.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "upload_evidence" not in perms and "manage_frameworks" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'upload_evidence' required"
+        )
 
     evidence = (
         db.query(Evidence)
@@ -376,6 +360,12 @@ def delete_evidence(
     """
     Delete evidence only from the current user's organization.
     """
+    perms = get_user_effective_permissions(current_user, db)
+    if "upload_evidence" not in perms and "manage_frameworks" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'upload_evidence' required"
+        )
 
     evidence = (
         db.query(Evidence)
@@ -426,4 +416,37 @@ def delete_evidence(
         "message": "Evidence deleted successfully",
         "evidence_id": evidence_id,
     }
+
+
+# =========================================================
+# PROCESS EVIDENCE (AI)
+# =========================================================
+
+from app.services.evidence_processor import process_evidence_document
+
+@router.post("/{evidence_id}/process")
+def process_evidence(
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Triggers the AI ingestion pipeline for the given evidence.
+    """
+    perms = get_user_effective_permissions(current_user, db)
+    if "run_ai_analysis" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'run_ai_analysis' required"
+        )
+
+    evidence = db.query(Evidence).filter(
+        Evidence.id == evidence_id,
+        Evidence.organization_id == current_user.organization_id
+    ).first()
+
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found in organization")
+
+    return process_evidence_document(db, evidence_id, current_user.organization_id)
 

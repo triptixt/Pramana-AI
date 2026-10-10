@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -23,3 +24,7 @@ class Permission(Base):
         Text,
         nullable=True
     )
+
+    # Relationships
+    role_permissions = relationship("RolePermission", back_populates="permission", cascade="all, delete-orphan")
+    roles = relationship("Role", secondary="role_permissions", back_populates="permissions", viewonly=True)

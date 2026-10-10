@@ -18,26 +18,41 @@ import {
   Layers
 } from 'lucide-react';
 import { FrameworkId } from '../../types';
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 
 export const ControlCenterView: React.FC = () => {
   const { controlsList, activeFrameworkFilter, setActiveFrameworkFilter, setSelectedControlId, reviewQueueList, setSelectedReviewItem, activeUser } = useApp();
 
   const access = getPageAccess(activeUser.role, 'controls');
-  const accessBadge = getAccessBadge(access);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCoverage, setSelectedCoverage] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'all'>(20);
+
+  // Dynamic framework tabs
+  const frameworkTabs = [
+    { id: 'all', label: 'All Frameworks', count: controlsList.length },
+    { id: 'iso-27001', label: 'ISO 27001:2022', count: controlsList.filter(c => c.framework === 'iso-27001').length },
+    { id: 'soc-2', label: 'SOC 2 Type II', count: controlsList.filter(c => c.framework === 'soc-2').length },
+    { id: 'nist-csf', label: 'NIST CSF 2.0', count: controlsList.filter(c => c.framework === 'nist-csf').length },
+    { id: 'pci-dss', label: 'PCI DSS v4.0', count: controlsList.filter(c => c.framework === 'pci-dss').length },
+    { id: 'dpdp', label: 'DPDP Act 2023', count: controlsList.filter(c => c.framework === 'dpdp').length },
+  ];
 
   const filteredControls = controlsList.filter((ctrl) => {
-    // RBAC Scoping: only show controls assigned to this role, hide the others
+    // RBAC Scoping: only show controls assigned to this role when restricted
     if (access === 'Assigned controls' || access === 'View assigned' || access === 'Assigned only') {
-      const isAssigned = ctrl.category.toLowerCase().includes('access') || ctrl.category.toLowerCase().includes('identity') || ctrl.category.toLowerCase().includes('security') || ctrl.category.toLowerCase().includes('annex');
+      const isAssigned = ctrl.category.toLowerCase().includes('access') || ctrl.category.toLowerCase().includes('identity') || ctrl.category.toLowerCase().includes('security') || ctrl.category.toLowerCase().includes('annex') || ctrl.category.toLowerCase().includes('protect');
       if (!isAssigned) return false;
     }
 
     const matchesFramework = activeFrameworkFilter === 'all' || ctrl.framework === activeFrameworkFilter;
-    const matchesSearch = ctrl.title.toLowerCase().includes(searchTerm.toLowerCase()) || ctrl.id.toLowerCase().includes(searchTerm.toLowerCase()) || ctrl.code.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = 
+      ctrl.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      ctrl.id.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      ctrl.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      ctrl.category.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCoverage = selectedCoverage === 'all' || ctrl.coverageState === selectedCoverage;
 
     return matchesFramework && matchesSearch && matchesCoverage;
@@ -48,103 +63,51 @@ export const ControlCenterView: React.FC = () => {
   const partialCoverage = controlsList.filter((c) => c.coverageState === 'partial').length;
   const noCoverage = controlsList.filter((c) => c.coverageState === 'none').length;
 
+  // Pagination calculation
+  const effectivePageSize = pageSize === 'all' ? filteredControls.length : pageSize;
+  const totalPages = effectivePageSize > 0 ? Math.ceil(filteredControls.length / effectivePageSize) : 1;
+  const validCurrentPage = Math.min(Math.max(currentPage, 1), Math.max(totalPages, 1));
+  const startIndex = (validCurrentPage - 1) * (pageSize === 'all' ? filteredControls.length : pageSize);
+  const endIndex = pageSize === 'all' ? filteredControls.length : startIndex + pageSize;
+  const paginatedControls = filteredControls.slice(startIndex, endIndex);
+
   return (
     <div className="space-y-6 pb-12">
-      {/* Role Access Scope Notice */}
-      {access === 'Assigned controls' && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Controls Ownership ({activeUser.roleTitle}): </span>
-              <span>Displaying controls specifically assigned to your engineering domain. You are responsible for evidence submission and gap remediation.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-amber-800 font-bold border border-amber-200 text-[10px] shrink-0">
-            Assigned Controls
-          </span>
-        </div>
-      )}
-
-      {access === 'View assigned' && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Eye className="w-4 h-4 text-emerald-600 shrink-0" />
-            <div>
-              <span className="font-bold">Contributor View ({activeUser.roleTitle}): </span>
-              <span>Inspect control specifications and requirements where you are assigned to contribute evidence files.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-emerald-700 font-bold border border-emerald-200 text-[10px] shrink-0">
-            View Assigned
-          </span>
-        </div>
-      )}
-
-      {access === 'Assigned only' && (
-        <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <div>
-              <span className="font-bold">Audit Scope Controls ({activeUser.roleTitle}): </span>
-              <span>Controls designated under the active third-party audit window.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-bold border border-indigo-200 text-[10px] shrink-0">
-            Assigned Only
-          </span>
-        </div>
-      )}
-
-      {access === 'View/Review' && (
-        <div className="p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-sky-600 shrink-0" />
-            <div>
-              <span className="font-bold">Internal Audit Review Mode: </span>
-              <span>Evaluate control implementation effectiveness, review evidence links, and verify AI explanations.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-sky-700 font-bold border border-sky-200 text-[10px] shrink-0">
-            View / Review
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div>
         <div className="flex items-center gap-2">
           <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             Control Center
           </h1>
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-            {accessBadge.label}
-          </span>
         </div>
         <p className="text-xs md:text-sm text-slate-500 mt-1">
-          Unified compliance control registry mapped across international standards with human auditor verification.
+          Unified compliance control registry mapped across international standards ({total} total controls available).
         </p>
       </div>
 
       {/* Framework Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1 custom-scrollbar">
-        {[
-          { id: 'all', label: 'All Frameworks' },
-          { id: 'iso-27001', label: 'ISO 27001:2022' },
-          { id: 'soc-2', label: 'SOC 2 Type II' },
-          { id: 'pci-dss', label: 'PCI DSS v4.0' },
-          { id: 'dpdp', label: 'DPDP Act 2023' },
-        ].map((tab) => (
+        {frameworkTabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveFrameworkFilter(tab.id as any)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+            onClick={() => {
+              setActiveFrameworkFilter(tab.id as any);
+              setCurrentPage(1);
+            }}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 ${
               activeFrameworkFilter === tab.id
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-900/20'
                 : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              activeFrameworkFilter === tab.id
+                ? 'bg-indigo-700 text-white'
+                : 'bg-slate-200 text-slate-700'
+            }`}>
+              {tab.count}
+            </span>
           </button>
         ))}
       </div>
@@ -199,7 +162,10 @@ export const ControlCenterView: React.FC = () => {
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setCurrentPage(1);
+            }}
             placeholder="Search control ID, code, or name..."
             className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           />
@@ -208,13 +174,30 @@ export const ControlCenterView: React.FC = () => {
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <select
             value={selectedCoverage}
-            onChange={(e) => setSelectedCoverage(e.target.value)}
-            className="w-full sm:w-48 py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            onChange={(e) => {
+              setSelectedCoverage(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="w-full sm:w-44 py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
           >
             <option value="all">All Coverage States</option>
             <option value="full">Full Coverage</option>
             <option value="partial">Partial Coverage</option>
             <option value="none">Not Covered</option>
+          </select>
+
+          <select
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value));
+              setCurrentPage(1);
+            }}
+            className="w-full sm:w-36 py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          >
+            <option value={20}>20 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
+            <option value="all">View All (78)</option>
           </select>
         </div>
       </div>
@@ -225,7 +208,7 @@ export const ControlCenterView: React.FC = () => {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-bold uppercase tracking-wider border-b border-slate-200">
-                <th className="py-3.5 px-4">Control ID</th>
+                <th className="py-3.5 px-4">Control Code</th>
                 <th className="py-3.5 px-4">Control Specification Title</th>
                 <th className="py-3.5 px-4">Framework</th>
                 <th className="py-3.5 px-4">Evidence Count</th>
@@ -236,7 +219,7 @@ export const ControlCenterView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {filteredControls.map((ctrl) => {
+              {paginatedControls.map((ctrl) => {
                 const reviewItem = reviewQueueList.find((r) => r.controlId === ctrl.id);
 
                 return (
@@ -246,7 +229,7 @@ export const ControlCenterView: React.FC = () => {
                     className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                   >
                     <td className="py-3.5 px-4 font-mono font-extrabold text-indigo-600">
-                      {ctrl.id}
+                      {ctrl.code || ctrl.id}
                     </td>
 
                     <td className="py-3.5 px-4">
@@ -324,7 +307,50 @@ export const ControlCenterView: React.FC = () => {
         {filteredControls.length === 0 && (
           <div className="text-center py-12 text-slate-400">
             <ShieldCheck className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-semibold">No controls found for this organization.</p>
+            <p className="text-sm font-semibold">No controls found for the selected framework or filters.</p>
+          </div>
+        )}
+
+        {/* Pagination Bar */}
+        {filteredControls.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-slate-100 text-xs text-slate-500 bg-slate-50/50">
+            <div>
+              Showing <span className="font-bold text-slate-800">{startIndex + 1}</span> to{' '}
+              <span className="font-bold text-slate-800">{Math.min(endIndex, filteredControls.length)}</span> of{' '}
+              <span className="font-bold text-slate-800">{filteredControls.length}</span> controls
+            </div>
+
+            {pageSize !== 'all' && totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={validCurrentPage <= 1}
+                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-40 font-medium text-slate-700 cursor-pointer"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
+                  <button
+                    key={pg}
+                    onClick={() => setCurrentPage(pg)}
+                    className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      validCurrentPage === pg
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'border border-slate-200 hover:bg-white text-slate-700'
+                    }`}
+                  >
+                    {pg}
+                  </button>
+                ))}
+                <button
+                  disabled={validCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                  className="px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white disabled:opacity-40 font-medium text-slate-700 cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

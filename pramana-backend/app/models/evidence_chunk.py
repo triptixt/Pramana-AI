@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, Text, ForeignKey
+from sqlalchemy import Column, Integer, Text, ForeignKey, UniqueConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -10,7 +12,7 @@ class EvidenceChunk(Base):
 
     evidence_version_id = Column(
         Integer,
-        ForeignKey("evidence_versions.id"),
+        ForeignKey("evidence_versions.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -20,3 +22,12 @@ class EvidenceChunk(Base):
     content = Column(Text, nullable=False)
 
     page_number = Column(Integer, nullable=True)
+
+    embedding = Column(Vector(768), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("evidence_version_id", "chunk_index", name="uq_evidence_chunks_version_index"),
+    )
+
+    # Relationships
+    evidence_version = relationship("EvidenceVersion", back_populates="chunks")

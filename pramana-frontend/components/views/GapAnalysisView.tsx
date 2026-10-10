@@ -18,13 +18,12 @@ import {
   Check
 } from 'lucide-react';
 import { GapItem, GapSeverity, GapStatus } from '../../types';
-import { getPageAccess, getAccessBadge } from '../../lib/rbac';
+import { getPageAccess } from '../../lib/rbac';
 
 export const GapAnalysisView: React.FC = () => {
   const { gapsList, resolveGap, setIsUploadModalOpen, setSelectedGapId, activeUser, runAIGapAnalysis } = useApp();
 
   const access = getPageAccess(activeUser.role, 'gaps');
-  const accessBadge = getAccessBadge(access);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
@@ -76,67 +75,6 @@ export const GapAnalysisView: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* RBAC Scoped Scope Banner */}
-      {access === 'Summary' && (
-        <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-purple-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Sparkles className="w-5 h-5 text-purple-600 shrink-0" />
-            <div>
-              <span className="font-bold">Executive Gap Summary Mode ({activeUser.roleTitle}): </span>
-              <span>Displaying high-level risk exposure, severity trends, and remediation velocities for executive reporting. Technical remediation actions are restricted.</span>
-            </div>
-          </div>
-          <span className="px-2.5 py-1 rounded bg-white text-purple-700 font-bold border border-purple-200 text-[10px] shrink-0">
-            Executive Summary
-          </span>
-        </div>
-      )}
-
-      {access === 'Assigned gaps' && (
-        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Gaps Ownership ({activeUser.roleTitle}): </span>
-              <span>Showing compliance gaps specifically impacting your owned controls and infrastructure components.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-amber-800 font-bold border border-amber-200 text-[10px] shrink-0">
-            Assigned Gaps
-          </span>
-        </div>
-      )}
-
-      {access === 'Assigned actions' && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-            <div>
-              <span className="font-bold">Assigned Actions ({activeUser.roleTitle}): </span>
-              <span>Showing tactical remediation actions and missing evidence files assigned to you.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-emerald-700 font-bold border border-emerald-200 text-[10px] shrink-0">
-            Assigned Actions
-          </span>
-        </div>
-      )}
-
-      {access === 'Assigned only' && (
-        <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-indigo-600 shrink-0" />
-            <div>
-              <span className="font-bold">Audit Scope Findings ({activeUser.roleTitle}): </span>
-              <span>Open non-conformities and remediation items under the active audit scope.</span>
-            </div>
-          </div>
-          <span className="px-2 py-0.5 rounded bg-white text-indigo-700 font-bold border border-indigo-200 text-[10px] shrink-0">
-            Assigned Only
-          </span>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -144,9 +82,6 @@ export const GapAnalysisView: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               {access === 'Summary' ? 'Executive Gap Risk Summary' : 'Gap Analysis & Remediation'}
             </h1>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${accessBadge.badgeClass}`}>
-              {accessBadge.label}
-            </span>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
             {access === 'Summary'
@@ -155,65 +90,7 @@ export const GapAnalysisView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleRunAIGap}
-          disabled={isRunningAI}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-violet-700 text-white text-xs font-bold hover:from-indigo-700 hover:to-violet-800 disabled:opacity-50 transition-all shadow-md shadow-indigo-600/25 shrink-0"
-        >
-          <Sparkles className={`w-4 h-4 ${isRunningAI ? 'animate-spin' : 'animate-pulse'}`} />
-          {isRunningAI ? 'Evaluating with Ollama...' : 'Run AI Gap Analysis'}
-        </button>
       </div>
-
-      {/* Live AI Gap Analysis Banner if Available */}
-      {aiResult && (
-        <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-violet-50/50 to-slate-50 border border-indigo-200 space-y-3 animate-in fade-in duration-200">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2 text-indigo-950 font-bold text-xs">
-              <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
-              <span>Pramana AI Engine Assessment (Run #{aiResult.run_id})</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">
-                Compliance Score: {aiResult.compliance_score}%
-              </span>
-              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
-                Ollama Local RAG
-              </span>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-700 leading-relaxed bg-white p-3 rounded-xl border border-indigo-100">
-            {aiResult.summary}
-          </p>
-
-          {aiResult.gaps && aiResult.gaps.length > 0 && (
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-bold text-indigo-950 block">
-                Detected Framework Gaps ({aiResult.gaps.length}):
-              </span>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {aiResult.gaps.map((g: any, gIdx: number) => (
-                  <div key={gIdx} className="p-2.5 rounded-xl bg-white border border-rose-100 space-y-1 text-xs">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-rose-700">{g.control_code}</span>
-                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                        {g.severity}
-                      </span>
-                    </div>
-                    <p className="font-medium text-slate-800 text-[11px]">{g.findings}</p>
-                    {g.recommendation && (
-                      <p className="text-slate-500 text-[10px] italic">Rec: {g.recommendation}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Summary Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>

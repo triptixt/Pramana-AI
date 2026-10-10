@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -11,15 +12,22 @@ class OrganizationFramework(Base):
 
     organization_id = Column(
         Integer,
-        ForeignKey("organizations.id"),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
 
     framework_id = Column(
         Integer,
-        ForeignKey("frameworks.id"),
+        ForeignKey("frameworks.id", ondelete="CASCADE"),
         nullable=False,
+        index=True
+    )
+
+    framework_version_id = Column(
+        Integer,
+        ForeignKey("framework_versions.id", ondelete="SET NULL"),
+        nullable=True,
         index=True
     )
 
@@ -34,3 +42,12 @@ class OrganizationFramework(Base):
         server_default=func.now(),
         nullable=False
     )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "framework_id", name="uq_org_framework_org_framework"),
+    )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="organization_frameworks")
+    framework = relationship("Framework", back_populates="organization_frameworks")
+    framework_version = relationship("FrameworkVersion", back_populates="organization_frameworks")

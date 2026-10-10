@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -18,7 +19,7 @@ class GapAnalysis(Base):
 
     control_id = Column(
         Integer,
-        ForeignKey("controls.id"),
+        ForeignKey("controls.id", ondelete="CASCADE"),
         nullable=False,
         index=True
     )
@@ -51,3 +52,11 @@ class GapAnalysis(Base):
         onupdate=func.now(),
         nullable=False
     )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "control_id", name="uq_gap_analysis_org_control"),
+    )
+
+    # Relationships
+    organization = relationship("Organization", back_populates="gap_analyses")
+    control = relationship("Control", back_populates="gap_analyses")

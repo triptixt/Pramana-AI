@@ -23,7 +23,6 @@ import {
   ROLES_CONFIG,
   getPageAccess,
   hasPageAccess,
-  getAccessBadge,
   normalizeRole,
 } from '../../lib/rbac';
 import { UserAvatar } from '../ui/UserAvatar';
@@ -55,14 +54,16 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
 
   const normRole = normalizeRole(activeUser.role);
+  const isSuperAdmin = activeUser.role === 'super_admin' || normRole === 'super_admin';
   const roleConfig = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
   const currentAccess = getPageAccess(activeUser.role, activeView);
-  const currentAccessBadge = getAccessBadge(currentAccess);
 
   const unreadCount = notificationsList.filter((n) => !n.read).length;
 
   const viewTitles: Record<string, { category: string; title: string }> = {
     overview: { category: 'Workspace', title: 'Overview Dashboard' },
+    'super-admin': { category: 'Platform Governance', title: 'Super Admin Console' },
+    superadmin: { category: 'Platform Governance', title: 'Super Admin Console' },
     evidence: { category: 'Workspace', title: 'Evidence Library' },
     controls: { category: 'Workspace', title: 'Control Center' },
     gaps: { category: 'Workspace', title: 'Gap Analysis' },
@@ -102,7 +103,11 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
         >
           <div className="flex items-center gap-2">
             <Search className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
-            <span>Search {currentOrg.name} evidence, controls, gaps...</span>
+            <span>
+              {isSuperAdmin
+                ? 'Search organizations, users, frameworks, controls...'
+                : `Search ${currentOrg?.name || 'organization'} evidence, controls, gaps...`}
+            </span>
           </div>
           <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 bg-white border border-slate-200 rounded-md shadow-2xs">
             Ctrl K
@@ -118,16 +123,6 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
           className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl sm:hidden"
         >
           <Search className="w-5 h-5" />
-        </button>
-
-        {/* AI Assistant Trigger Button */}
-        <button
-          onClick={() => setIsAIChatOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-xs font-semibold hover:from-indigo-600 hover:to-violet-700 shadow-sm shadow-indigo-500/20 transition-all cursor-pointer"
-          title="Open Pramana AI Assistant"
-        >
-          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-          <span className="hidden sm:inline">AI Assistant</span>
         </button>
 
         {/* Notifications Icon & Popover */}
@@ -207,43 +202,47 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
         </div>
 
         {/* Divider */}
-        <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+        {!isSuperAdmin && activeView !== 'super-admin' && (
+          <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+        )}
 
-        {/* Merchant Organization Switcher Dropdown */}
-        <div className="relative hidden lg:block">
-          <button
-            onClick={() => setShowOrgDropdown(!showOrgDropdown)}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 border border-slate-200 text-xs font-bold text-slate-800 transition-colors"
-          >
-            <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-            <span>{currentOrg.name}</span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-          </button>
+        {/* Merchant Organization Switcher Dropdown (for non-SuperAdmin users) */}
+        {!isSuperAdmin && activeView !== 'super-admin' && (
+          <div className="relative hidden lg:block">
+            <button
+              onClick={() => setShowOrgDropdown(!showOrgDropdown)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 border border-slate-200 text-xs font-bold text-slate-800 transition-colors"
+            >
+              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>{currentOrg.name}</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
 
-          {showOrgDropdown && (
-            <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 animate-in fade-in slide-in-from-top-2 duration-150">
-              <p className="px-3 py-1.5 text-[10px] font-bold uppercase text-slate-400 border-b border-slate-100">
-                Switch Merchant Vault
-              </p>
-              <div className="py-1 space-y-1">
-                {organizations.map((org) => (
-                  <button
-                    key={org.id}
-                    onClick={() => {
-                      switchOrganization(org.id);
-                      setShowOrgDropdown(false);
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors ${currentOrg.id === org.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                  >
-                    <span>{org.name}</span>
-                    <span className="text-[10px] opacity-75 font-mono">{org.plan}</span>
-                  </button>
-                ))}
+            {showOrgDropdown && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase text-slate-400 border-b border-slate-100">
+                  Organization Vault
+                </p>
+                <div className="py-1 space-y-1">
+                  {organizations.map((org) => (
+                    <button
+                      key={org.id}
+                      onClick={() => {
+                        switchOrganization(org.id);
+                        setShowOrgDropdown(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors ${currentOrg.id === org.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                    >
+                      <span>{org.name}</span>
+                      <span className="text-[10px] opacity-75 font-mono">{org.plan}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* User Profile Avatar & Role Badge */}
         <div className="relative">
@@ -255,9 +254,6 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
               <div className="flex items-center gap-1">
                 <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${roleConfig.badgeBg} ${roleConfig.badgeText} border ${roleConfig.badgeBorder}`}>
                   {roleConfig.title}
-                </span>
-                <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded ${currentAccessBadge.badgeClass}`}>
-                  {currentAccessBadge.label}
                 </span>
               </div>
               <span className="text-xs font-bold text-slate-800 leading-tight mt-0.5">

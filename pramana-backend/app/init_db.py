@@ -25,5 +25,14 @@ from app.models import (
 )
 
 Base.metadata.create_all(bind=engine)
-
 print("Database tables created successfully!")
+
+from app.database import SessionLocal
+from app.services.rbac_service import initialize_rbac
+
+db = SessionLocal()
+try:
+    stats = initialize_rbac(db)
+    print(f"RBAC initialized successfully: {stats}")
+finally:
+    db.close()
