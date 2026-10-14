@@ -15,7 +15,9 @@ import {
   ArrowRight,
   ShieldAlert,
   FilePlus2,
-  Check
+  Check,
+  Eye,
+  Info
 } from 'lucide-react';
 import { GapItem, GapSeverity, GapStatus } from '../../types';
 import { getPageAccess } from '../../lib/rbac';
@@ -24,6 +26,7 @@ export const GapAnalysisView: React.FC = () => {
   const { gapsList, resolveGap, setIsUploadModalOpen, setSelectedGapId, activeUser, runAIGapAnalysis } = useApp();
 
   const access = getPageAccess(activeUser.role, 'gaps');
+  const isReadOnlyGap = access === 'View' || activeUser.role === 'external_auditor';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeverity, setSelectedSeverity] = useState<string>('all');
@@ -61,6 +64,7 @@ export const GapAnalysisView: React.FC = () => {
   const criticalCount = gapsList.filter((g) => g.severity === 'critical' && g.status !== 'resolved').length;
   const highCount = gapsList.filter((g) => g.severity === 'high' && g.status !== 'resolved').length;
   const mediumCount = gapsList.filter((g) => g.severity === 'medium' && g.status !== 'resolved').length;
+  const lowCount = gapsList.filter((g) => g.severity === 'low' && g.status !== 'resolved').length;
   const resolvedMonth = gapsList.filter((g) => g.status === 'resolved').length;
 
   const [resolvingGapId, setResolvingGapId] = useState<string | null>(null);
@@ -82,16 +86,55 @@ export const GapAnalysisView: React.FC = () => {
             <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
               {access === 'Summary' ? 'Executive Gap Risk Summary' : 'Gap Analysis & Remediation'}
             </h1>
+            {isReadOnlyGap && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-200">
+                <Eye className="w-3.5 h-3.5" /> Read-Only Audit View
+              </span>
+            )}
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
             {access === 'Summary'
               ? 'Executive overview of compliance risk exposure, severity breakdown, and remediation trajectory.'
+              : isReadOnlyGap
+              ? 'Auditor read-only inspection of detected compliance gaps, missing evidence requirements, and severity tracking.'
               : 'Automated compliance gap detection, severity tracking, and remediation workflows across all active frameworks.'}
           </p>
         </div>
 
+        {!isReadOnlyGap && (
+          <button
+            onClick={handleRunAIGap}
+            disabled={isRunningAI}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-xs font-semibold shadow-md shadow-indigo-900/20 disabled:opacity-50 transition-all cursor-pointer"
+          >
+            <Sparkles className={`w-4 h-4 ${isRunningAI ? 'animate-spin' : ''}`} />
+            {isRunningAI ? 'Analyzing Enrolled Frameworks...' : 'Run AI Gap Assessment'}
+          </button>
+        )}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+
+      {aiResult && (
+        <div className="p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-indigo-950">AI Gap Assessment Complete</p>
+              <p className="text-xs text-indigo-700">
+                Assessed {aiResult.total_assessed || 0} controls across {aiResult.framework_count || 0} enrolled frameworks. Identified {aiResult.total_gaps || 0} gaps requiring remediation.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setAiResult(null)}
+            className="text-xs text-indigo-500 hover:text-indigo-800 font-medium cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Open Gaps</p>
@@ -129,6 +172,16 @@ export const GapAnalysisView: React.FC = () => {
           </div>
           <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
             <Clock className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Low Severity</p>
+            <p className="text-2xl font-extrabold text-slate-600 font-mono mt-0.5">{lowCount}</p>
+          </div>
+          <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
+            <Info className="w-5 h-5" />
           </div>
         </div>
 
@@ -223,6 +276,11 @@ export const GapAnalysisView: React.FC = () => {
                   <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> Why Identified by Pramana AI:
                 </p>
                 <p className="text-slate-600 leading-relaxed">{gap.whyIdentified}</p>
+                {gap.severityReason && (
+                  <p className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 mt-1">
+                    <strong className="text-slate-700">Risk Severity Justification:</strong> {gap.severityReason}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -247,6 +305,16 @@ export const GapAnalysisView: React.FC = () => {
                   <p className="font-bold">Resolved by Compliance Team</p>
                   {gap.remediationNotes && <p className="text-[11px] text-emerald-700 italic">"{gap.remediationNotes}"</p>}
                 </div>
+              </div>
+            ) : isReadOnlyGap ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5 font-medium text-amber-700">
+                  <Clock className="w-3.5 h-3.5 text-amber-500" />
+                  Gap Active — Awaiting Organization Remediation
+                </span>
+                <span className="text-[11px] text-slate-400 italic">
+                  Read-only view — external auditors cannot modify gap state
+                </span>
               </div>
             ) : (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">

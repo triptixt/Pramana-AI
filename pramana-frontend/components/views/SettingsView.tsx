@@ -682,7 +682,7 @@ export const SettingsView: React.FC = () => {
           <div>
             <label className="text-xs font-semibold text-slate-700 block mb-1">Live Frameworks in Database</label>
             {isLoadingFw ? (
-              <p className="text-xs text-slate-400 py-2">Loading frameworks from PostgreSQL...</p>
+              <p className="text-xs text-slate-400 py-2">Loading frameworks from registry...</p>
             ) : frameworks.length > 0 ? (
               <div className="flex flex-wrap gap-2 pt-1">
                 {frameworks.map((fw) => (
@@ -698,7 +698,7 @@ export const SettingsView: React.FC = () => {
               </div>
             ) : (
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
-                No frameworks currently loaded in PostgreSQL. Add frameworks via the Frameworks management page.
+                No frameworks currently loaded. Add frameworks via the Frameworks management page.
               </div>
             )}
           </div>
@@ -752,7 +752,7 @@ export const SettingsView: React.FC = () => {
           <h3 className="text-sm font-bold text-slate-900">Alert & Notification Policies</h3>
 
           {[
-            { key: 'newEvidence', label: 'New Evidence Ingestion', desc: 'Notify team when evidence is uploaded to PostgreSQL vault' },
+            { key: 'newEvidence', label: 'New Evidence Ingestion', desc: 'Notify team when evidence is uploaded to secure compliance vault' },
             { key: 'reviewRequired', label: 'Auditor Review Triggers', desc: 'Alert assigned auditor when candidate mapping is ready for decision' },
             { key: 'gapDueDate', label: 'Remediation Reminders', desc: 'Send reminders before gap remediation target deadlines' },
             { key: 'evidenceRejected', label: 'Evidence Review Rejection', desc: 'Notify submitter if an auditor rejects candidate evidence' },
@@ -787,13 +787,13 @@ export const SettingsView: React.FC = () => {
       {activeTab === 'integrations' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl">
           {[
-            { name: 'Amazon Web Services (AWS)', category: 'Cloud Infrastructure', status: 'Connected', icon: Cloud },
-            { name: 'Identity & SSO Provider', category: 'IdP & Authentication', status: 'Active', icon: Lock },
-            { name: 'Document Vault Storage', category: 'PostgreSQL Storage', status: 'Active', icon: Database },
-            { name: 'Issue & Task Tracker', category: 'Remediation Pipeline', status: 'Available', icon: Layers },
+            { name: 'Amazon Web Services (AWS)', category: 'Cloud Infrastructure', status: 'Ready to Connect', icon: Cloud },
+            { name: 'Corporate Identity & SSO', category: 'SAML 2.0 / OIDC', status: 'Ready to Connect', icon: Lock },
+            { name: 'Document Vault Storage', category: 'Encrypted Cloud Storage', status: 'Configured', icon: Database },
+            { name: 'Issue & Task Tracker', category: 'Jira / Linear Webhooks', status: 'Available', icon: Layers },
           ].map((int) => {
             const Icon = int.icon;
-            const isConnected = int.status === 'Connected' || int.status === 'Active';
+            const isConfigured = int.status === 'Configured';
 
             return (
               <div key={int.name} className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
@@ -808,8 +808,8 @@ export const SettingsView: React.FC = () => {
                 </div>
 
                 <span
-                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${isConnected
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${isConfigured
+                      ? 'bg-slate-100 text-slate-700 border-slate-200'
                       : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                     }`}
                 >

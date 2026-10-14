@@ -67,10 +67,10 @@ def get_current_user(
     return user
 
 def is_super_admin(user: User) -> bool:
-    """Returns True if the user is a platform super administrator."""
+    """Returns True if the user is a platform super administrator in Organization 1."""
     if not user:
         return False
-    if user.role and user.role.lower() in ["super_admin", "superadmin", "admin"]:
+    if user.organization_id == 1 and user.role and user.role.lower() in ["super_admin", "superadmin", "admin"]:
         return True
     return False
 
@@ -81,6 +81,10 @@ def require_super_admin(
     from app.models.role import Role
     from app.models.user_role import UserRole
     
+    # Platform super administration is strictly reserved for Organization 1
+    if current_user.organization_id != 1:
+        raise HTTPException(status_code=403, detail="SuperAdmin privileges required: platform-wide access denied to tenant users")
+
     user_roles = (
         db.query(Role)
         .join(UserRole, UserRole.role_id == Role.id)

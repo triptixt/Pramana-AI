@@ -1,3 +1,5 @@
+import { ActiveView, PageAccessLevel, AssignedRole } from '../types';
+
 const CANDIDATE_API_BASES = [
   process.env.NEXT_PUBLIC_API_URL,
   'http://127.0.0.1:8001',
@@ -167,11 +169,73 @@ export const api = {
       }
       return data;
     },
-    me: async (): Promise<{ id: number; name: string; email: string; organization_id: number; organization_name?: string; is_active: boolean; role?: string; permissions?: string[] }> => {
-      return await request<{ id: number; name: string; email: string; organization_id: number; organization_name?: string; is_active: boolean; role?: string; permissions?: string[] }>('/auth/me');
+    me: async (): Promise<{
+      id: number;
+      name: string;
+      email: string;
+      organization_id: number;
+      organization_name?: string;
+      is_active: boolean;
+      is_super_admin?: boolean;
+      role?: string;
+      role_title?: string;
+      assigned_roles?: AssignedRole[];
+      can_switch_role?: boolean;
+      can_switch_organization?: boolean;
+      permissions?: string[];
+      accessible_pages?: ActiveView[];
+      page_access_levels?: Record<string, PageAccessLevel>;
+    }> => {
+      return await request('/auth/me');
     },
-    logout: () => {
-      authStorage.clearToken();
+    switchRole: async (role: string): Promise<{
+      access_token: string;
+      token_type: string;
+      message: string;
+      user: any;
+      assigned_roles?: AssignedRole[];
+      can_switch_role?: boolean;
+      can_switch_organization?: boolean;
+      is_super_admin?: boolean;
+      permissions?: string[];
+      accessible_pages?: ActiveView[];
+      page_access_levels?: Record<string, PageAccessLevel>;
+    }> => {
+      const data = await request<{
+        access_token: string;
+        token_type: string;
+        message: string;
+        user: any;
+        assigned_roles?: AssignedRole[];
+        can_switch_role?: boolean;
+        can_switch_organization?: boolean;
+        is_super_admin?: boolean;
+        permissions?: string[];
+        accessible_pages?: ActiveView[];
+        page_access_levels?: Record<string, PageAccessLevel>;
+      }>('/auth/switch-role', {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      });
+      if (data.access_token) {
+        authStorage.setToken(data.access_token);
+      }
+      return data;
+    },
+    logout: async (): Promise<{ message: string }> => {
+      try {
+        const token = authStorage.getToken();
+        if (token) {
+          return await request<{ message: string }>('/auth/logout', {
+            method: 'POST',
+          });
+        }
+      } catch (err: any) {
+        console.warn('[Pramana API] Server logout notice:', err?.message || 'Server completed');
+      } finally {
+        authStorage.clearToken();
+      }
+      return { message: 'Logged out successfully' };
     },
     resetPassword: async (email: string, new_password: string): Promise<{ message: string; email: string }> => {
       return await request<{ message: string; email: string }>('/auth/reset-password', {
@@ -246,6 +310,14 @@ export const api = {
       body: JSON.stringify(data),
     }),
     delete: (id: number) => request<{ message: string; deleted?: boolean; deactivated?: boolean }>(`/users/${id}`, {
+      method: 'DELETE',
+    }),
+    getRoles: (userId: number) => request<Array<{ id: number; name: string; title: string; description?: string; is_active: boolean }>>(`/users/${userId}/roles`),
+    assignRole: (userId: number, role: string) => request<{ message: string; assigned_roles: any[] }>(`/users/${userId}/roles`, {
+      method: 'POST',
+      body: JSON.stringify({ role }),
+    }),
+    removeRole: (userId: number, roleId: number) => request<{ message: string; assigned_roles: any[] }>(`/users/${userId}/roles/${roleId}`, {
       method: 'DELETE',
     }),
   },
@@ -548,9 +620,11 @@ export const api = {
         file_type: string;
         description: string;
         status: string;
+        chunks?: number;
         mapping_id?: number;
         ai_confidence?: number;
         message: string;
+        mappings?: Array<any>;
       }>('/evidence/upload', {
         method: 'POST',
         body: formData,
@@ -583,6 +657,91 @@ export const api = {
     process: (id: number) => request<{ message: string; chunks?: number }>(`/evidence/${id}/process`, {
       method: 'POST',
     }),
+    summarize: (id: number) => request<{
+      evidence_id: number;
+      file_name: string;
+      document_type: string;
+      summary: string;
+      key_takeaways: string[];
+      model_name: string;
+    }>(`/evidence/${id}/summarize`, {
+      method: 'POST',
+    }),
+    getFrameworkAssessments: (evidenceId: number) =>
+      request<{
+        evidence: {
+          id: number;
+          organization_id: number;
+          file_name: string;
+          file_type: string | null;
+          description: string | null;
+          status: string;
+          chunks_count: number;
+          created_at: string | null;
+        };
+        stats: {
+          total_mapped_controls: number;
+          total_frameworks_mapped: number;
+          total_compliant: number;
+          total_gaps: number;
+        };
+        authorized_frameworks: Array<{
+          id: number;
+          code: string;
+          name: string;
+          version_id: number;
+          version: string;
+        }>;
+        frameworks: Array<{
+          framework_id: number;
+          framework_code: string;
+          framework_name: string;
+          version_id: number;
+          version: string;
+          run: {
+            id: number;
+            status: string;
+            completed_at: string | null;
+          } | null;
+          controls_count: number;
+          controls: Array<{
+            control_id: number;
+            control_code: string;
+            title: string;
+            category: string;
+            requirement: string;
+            mapping: {
+              id: number;
+              mapping_status: string;
+              mapping_type: string;
+              confidence_score: number | null;
+              coverage_score?: number | null;
+              ai_explanation: string | null;
+              requirement_supported: string | null;
+              unsupported_requirements: string | null;
+              notes: string | null;
+              reviewed_at: string | null;
+            };
+            assessment: {
+              compliance_status: string;
+              coverage_score?: number | null;
+              confidence_score: number | null;
+              explanation: string;
+              citations: string[];
+              gaps: string[];
+              recommendations: string[];
+            } | null;
+            gap: {
+              id: number;
+              status: string;
+              severity: string;
+              severity_reason?: string | null;
+              findings: string | null;
+              recommendation: string | null;
+            } | null;
+          }>;
+        }>;
+      }>(`/evidence/${evidenceId}/framework-assessments`),
   },
 
   // 6. Evidence Control Mappings (AI Evidence Analysis & Auditor Review)
@@ -605,6 +764,7 @@ export const api = {
         control_id: number;
         mapping_type: string;
         confidence_score: number | null;
+        coverage_score?: number | null;
         mapping_status: string;
         notes: string | null;
         ai_explanation?: string;
@@ -686,6 +846,7 @@ export const api = {
         control_id: number;
         status: string;
         severity: string;
+        severity_reason?: string | null;
         findings: string | null;
         recommendation: string | null;
         created_at: string;
@@ -698,6 +859,7 @@ export const api = {
       control_id: number;
       status: string;
       severity: string;
+      severity_reason?: string | null;
       findings: string | null;
       recommendation: string | null;
     }>(`/gap-analysis/${id}`),
@@ -706,6 +868,7 @@ export const api = {
       control_id: number;
       status?: string;
       severity?: string;
+      severity_reason?: string;
       findings?: string;
       recommendation?: string;
     }) => request<{
@@ -714,6 +877,7 @@ export const api = {
       control_id: number;
       status: string;
       severity: string;
+      severity_reason?: string | null;
       findings: string | null;
       recommendation: string | null;
     }>('/gap-analysis/', {
@@ -725,6 +889,7 @@ export const api = {
       control_id: number;
       status: string;
       severity: string;
+      severity_reason?: string;
       findings?: string;
       recommendation?: string;
     }) => request<{
@@ -733,6 +898,7 @@ export const api = {
       control_id: number;
       status: string;
       severity: string;
+      severity_reason?: string | null;
       findings: string | null;
       recommendation: string | null;
     }>(`/gap-analysis/${id}`, {
@@ -934,8 +1100,40 @@ export const api = {
 
   // 11. Assessments
   assessments: {
-    create: (framework_id: number) => request<any>(`/assessments/?framework_id=${framework_id}`, {
-      method: 'POST'
-    })
+    create: (framework_id: number, framework_version_id?: number) => {
+      const queryParams = new URLSearchParams({ framework_id: String(framework_id) });
+      if (framework_version_id) {
+        queryParams.append('framework_version_id', String(framework_version_id));
+      }
+      return request<any>(`/assessments/?${queryParams.toString()}`, {
+        method: 'POST'
+      });
+    },
+    assessEvidence: (evidenceId: number, frameworkIds?: number[]) =>
+      request<{
+        message: string;
+        evidence_id: number;
+        evidence_file: string;
+        total_frameworks: number;
+        total_controls_assessed: number;
+        total_compliant: number;
+        total_gaps_identified: number;
+        frameworks: Array<{
+          framework_id: number;
+          framework_name: string;
+          framework_code: string;
+          version_id: number;
+          version_name: string;
+          run_id?: number;
+          status: string;
+          controls_assessed: number;
+          controls: Array<any>;
+        }>;
+      }>(`/assessments/evidence/${evidenceId}`, {
+        method: 'POST',
+        body: JSON.stringify({ framework_ids: frameworkIds && frameworkIds.length > 0 ? frameworkIds : undefined }),
+      }),
+    listRuns: () => request<any[]>('/assessments/runs'),
+    getRunDetails: (runId: number) => request<any>(`/assessments/runs/${runId}`)
   }
 };

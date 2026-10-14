@@ -95,7 +95,7 @@ export const AuthModal: React.FC = () => {
       subtitle={
         mode === 'login'
           ? 'Enter your corporate credentials to access your isolated compliance vault.'
-          : 'Update your account password in the PostgreSQL database.'
+          : 'Update your account password in the secure vault.'
       }
       maxWidth="md"
     >
@@ -207,7 +207,7 @@ export const AuthModal: React.FC = () => {
                 ? 'Processing...'
                 : mode === 'login'
                   ? 'Sign In & Enter Vault'
-                  : 'Update Password in PostgreSQL'}
+                  : 'Update Password'}
             </span>
             <ArrowRight className="w-4 h-4" />
           </button>
@@ -216,7 +216,7 @@ export const AuthModal: React.FC = () => {
         <p className="text-[11px] text-center text-slate-400 mt-2">
           {mode === 'login'
             ? 'Tenant organizations and accounts are provisioned exclusively by Super Admin.'
-            : 'Password hash will be securely encrypted and updated in PostgreSQL.'}
+            : 'Password will be securely encrypted and updated in the compliance vault.'}
         </p>
       </form>
     </Modal>

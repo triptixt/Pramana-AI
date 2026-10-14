@@ -12,10 +12,11 @@ import {
   ReviewQueueItem,
   AuditTrailLog,
   NotificationItem,
-  Organization
+  Organization,
+  CoverageState
 } from '../types';
-import { api } from './api';
-import { ROLES_CONFIG, hasPageAccess, getRoleDefaultPage, normalizeRole } from './rbac';
+import { api, authStorage } from './api';
+import { ROLES_CONFIG, getRoleDefaultPage, normalizeRole } from './rbac';
 
 const INITIAL_ORG: Organization = {
   id: '',
@@ -51,10 +52,11 @@ interface AppContextType {
   // Backend Connection Status
   isBackendConnected: boolean;
   backendInfo: { status: string; app: string; version: string } | null;
-  refreshBackendData: () => Promise<void>;
+  refreshBackendData: (explicitOrgId?: string, force?: boolean) => Promise<void>;
 
   // Authentication & Multi-Tenancy State
   isAuthenticated: boolean;
+  isAuthLoading: boolean;
   isAuthModalOpen: boolean;
   setIsAuthModalOpen: (open: boolean) => void;
   authModalMode: 'login' | 'signup';
@@ -67,7 +69,9 @@ interface AppContextType {
   login: (email: string, password: string, orgId?: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string, orgName?: string) => Promise<boolean>;
   resetPassword: (email: string, newPassword: string) => Promise<boolean>;
-  logout: () => void;
+  isLoggingOut: boolean;
+  logout: () => Promise<void>;
+  switchRole: (roleName: string) => Promise<boolean>;
 
   // View & Role State
   activeView: ActiveView;
@@ -122,7 +126,6 @@ interface AppContextType {
   resolveGap: (gapId: string, notes: string) => Promise<void>;
   showToast: (title: string, description?: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
   dismissToast: (id: string) => void;
-  switchRole: (role: Role) => void;
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
 
@@ -145,6 +148,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Auth & Tenant State
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
 
@@ -228,6 +233,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const me = await api.auth.me();
             setIsAuthenticated(true);
 
+            let chosenOrg: Organization = {
+              id: `org-${me.organization_id}`,
+              name: `Organization ${me.organization_id}`,
+              slug: `org-${me.organization_id}`,
+              industry: 'Enterprise Technology',
+              plan: 'Enterprise',
+              auditPeriod: 'Annual Audit Window',
+              activeFrameworks: [],
+            };
+
             // Fetch Organizations from backend for authenticated user
             try {
               const backendOrgs = await api.organizations.list();
@@ -244,26 +259,37 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 }));
                 setOrganizations(mappedOrgs);
                 const chosenOrgId = explicitOrgId || currentOrgRef.current.id;
-                const matchingOrg = mappedOrgs.find((o) => o.id === chosenOrgId) || mappedOrgs.find(o => o.id === `org-${me.organization_id}`) || mappedOrgs[0];
-                activeOrgForFetch = matchingOrg;
-                setCurrentOrg(matchingOrg);
-
-                const isSuper = me.role === 'super_admin' || normalizeRole(me.role || '') === 'super_admin';
-                const assignedRole = (me.role || 'ciso') as Role;
-                setActiveUser((prev) => ({
-                  ...prev,
-                  id: `usr-${me.id}`,
-                  name: me.name || prev.name,
-                  email: me.email,
-                  role: assignedRole,
-                  roleTitle: isSuper ? 'Super Admin' : prev.roleTitle,
-                  organizationId: matchingOrg.id,
-                  organizationName: matchingOrg.name,
-                }));
+                chosenOrg = mappedOrgs.find((o) => o.id === chosenOrgId) || mappedOrgs.find(o => o.id === `org-${me.organization_id}`) || mappedOrgs[0];
               }
             } catch (e: any) {
               console.warn('[Pramana] Error loading organizations:', e.message || e);
             }
+
+            activeOrgForFetch = chosenOrg;
+            setCurrentOrg(chosenOrg);
+
+            const isSuper = me.role === 'super_admin' || normalizeRole(me.role || '') === 'super_admin' || !!me.is_super_admin;
+            const assignedRole = (me.role || 'ciso') as Role;
+            const normRole = normalizeRole(assignedRole);
+            const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
+
+            setActiveUser((prev) => ({
+              ...prev,
+              id: `usr-${me.id}`,
+              name: me.name || prev.name,
+              email: me.email,
+              role: assignedRole,
+              roleTitle: isSuper ? 'Super Admin' : (roleCfg ? roleCfg.title : prev.roleTitle),
+              organizationId: chosenOrg.id,
+              organizationName: chosenOrg.name,
+              assignedRoles: me.assigned_roles,
+              canSwitchRole: me.can_switch_role,
+              canSwitchOrganization: me.can_switch_organization,
+              isSuperAdmin: me.is_super_admin,
+              permissions: me.permissions,
+              accessiblePages: me.accessible_pages,
+              pageAccessLevels: me.page_access_levels,
+            }));
           } catch (authErr) {
             console.warn('[Pramana] Stored session invalid, resetting auth state');
             api.auth.logout();
@@ -413,7 +439,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               title: g.findings ? g.findings.slice(0, 50) + '...' : `Gap in Control ${g.control_id}`,
               framework: 'iso-27001',
               controlId: `CTRL-${g.control_id}`,
-              severity: (g.severity as any) || 'medium',
+              severity: (g.severity ? g.severity.toLowerCase() : 'unassessed') as any,
+              severityReason: g.severity_reason || undefined,
               owner: 'Compliance Team',
               dueDate: '—',
               status: (g.status as any) || 'open',
@@ -432,9 +459,104 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           setMasterGaps([]);
         }
 
+        // Fetch Evidence Control Mappings (AI Candidate Mappings & Auditor Review Queue)
+        try {
+          const backendMappings = await api.mappings.list();
+          if (backendMappings && backendMappings.length > 0) {
+            const mappedQueueItems: ReviewQueueItem[] = backendMappings.map((m: any) => {
+              const statusNorm = m.mapping_status?.toLowerCase();
+              return {
+                id: `rev-${m.id}`,
+                organizationId: activeOrgForFetch.id,
+                evidenceId: `ev-${m.evidence_id}`,
+                evidenceName: m.evidence?.file_name || `Evidence ${m.evidence_id}`,
+                evidenceVersion: 'v1.0',
+                fileType: (['pdf', 'json', 'png', 'docx', 'csv'].includes(m.evidence?.file_type || '') ? m.evidence.file_type : 'pdf') as any,
+                framework: m.control?.framework_code || 'compliance',
+                controlId: m.control?.control_code || `CTRL-${m.control_id}`,
+                controlTitle: m.control?.title || 'Compliance Control',
+                aiConfidence: m.confidence_score != null ? Math.round(m.confidence_score * 100) : null,
+                coverageScore: m.coverage_score != null ? Math.round(m.coverage_score) : null,
+                aiReasoning: m.ai_explanation || '',
+                evidenceExcerpt: m.requirement_supported || m.notes || '',
+                assignedAuditor: 'Assigned Auditor',
+                lastUpdated: m.updated_at ? new Date(m.updated_at).toLocaleDateString('en-US') : (m.created_at ? new Date(m.created_at).toLocaleDateString('en-US') : 'Recent'),
+                status: statusNorm === 'approved' ? 'approved' : statusNorm === 'rejected' ? 'rejected' : 'pending_review',
+                decisionType: statusNorm === 'approved' || statusNorm === 'rejected' ? 'human_decision' : 'pending_human_review',
+              };
+            });
+            setMasterReviewQueue(mappedQueueItems);
+
+            // Cross-populate mappedControlIds and frameworks into masterEvidence
+            setMasterEvidence((prevEvidence) =>
+              prevEvidence.map((ev) => {
+                const numericEvId = getNumericId(ev.id);
+                const evMappings = backendMappings.filter((m: any) => m.evidence_id === numericEvId);
+                if (evMappings.length > 0) {
+                  const codes = evMappings.map((m: any) => m.control?.control_code || `CTRL-${m.control_id}`);
+                  const frameworks = Array.from(new Set(evMappings.map((m: any) => {
+                    const raw = (m.control?.framework_code || '').toLowerCase();
+                    if (raw.includes('iso') || raw.includes('27001')) return 'iso-27001';
+                    if (raw.includes('soc')) return 'soc-2';
+                    if (raw.includes('pci')) return 'pci-dss';
+                    if (raw.includes('dpdp')) return 'dpdp';
+                    if (raw.includes('nist')) return 'nist-csf';
+                    return 'iso-27001';
+                  }))) as any[];
+                  const validConfs = evMappings.filter((m: any) => m.confidence_score != null).map((m: any) => Math.round(m.confidence_score * 100));
+                  const highestConf = validConfs.length > 0 ? Math.max(...validConfs) : null;
+                  const validCoverages = evMappings.filter((m: any) => m.coverage_score != null).map((m: any) => Math.round(m.coverage_score));
+                  const avgCoverage = validCoverages.length > 0 ? Math.round(validCoverages.reduce((a: number, b: number) => a + b, 0) / validCoverages.length) : null;
+                  const allApproved = evMappings.every((m: any) => m.mapping_status === 'approved');
+                  const anyRejected = evMappings.some((m: any) => m.mapping_status === 'rejected');
+                  return {
+                    ...ev,
+                    mappedControlIds: codes,
+                    frameworks: frameworks.length > 0 ? frameworks : ev.frameworks,
+                    aiConfidence: highestConf,
+                    coverageScore: avgCoverage,
+                    processingStatus: allApproved ? 'mapped' : anyRejected ? 'rejected' : 'needs_review',
+                    decisionType: allApproved || anyRejected ? 'human_decision' : 'ai_suggestion',
+                  };
+                }
+                return ev;
+              })
+            );
+
+            // Cross-populate mapped evidence into masterControls
+            setMasterControls((prevControls) =>
+              prevControls.map((ctrl) => {
+                const ctrlMappings = backendMappings.filter((m: any) => m.control?.control_code === ctrl.code || m.control_id === getNumericId(ctrl.id));
+                if (ctrlMappings.length > 0) {
+                  const evIds = ctrlMappings.map((m: any) => `ev-${m.evidence_id}`);
+                  const anyApproved = ctrlMappings.some((m: any) => m.mapping_status === 'approved');
+                  const validConfs = ctrlMappings.filter((m: any) => m.confidence_score != null).map((m: any) => Math.round(m.confidence_score * 100));
+                  const highestConf = validConfs.length > 0 ? Math.max(...validConfs) : null;
+                  const firstMapping = ctrlMappings[0];
+                  return {
+                    ...ctrl,
+                    mappedEvidenceCount: ctrlMappings.length,
+                    evidenceIds: evIds,
+                    aiConfidence: highestConf,
+                    aiExplanation: firstMapping?.ai_explanation || ctrl.aiExplanation,
+                    reviewStatus: anyApproved ? 'Approved' : 'Pending Review',
+                    coverageState: (anyApproved ? 'full' : 'partial') as CoverageState,
+                  };
+                }
+                return ctrl;
+              })
+            );
+          } else {
+            setMasterReviewQueue([]);
+          }
+        } catch (e: any) {
+          console.warn('[Pramana] Error loading evidence control mappings:', e.message || e);
+          setMasterReviewQueue([]);
+        }
+
         // Fetch Audit Logs (filtered to tenant organization users only)
         try {
-          const backendAuditLogs = await api.auditLogs.list(currentOrgNum);
+          const backendAuditLogs = await api.auditLogs.list(currentOrgNum).catch(() => []);
           if (backendAuditLogs && backendAuditLogs.length > 0) {
             const mappedAuditTrail: AuditTrailLog[] = backendAuditLogs
               .filter((log) => {
@@ -483,7 +605,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               id: `notif-ev-${e.id}`,
               organizationId: `org-${e.organization_id}`,
               title: `Evidence Ingested: ${e.file_name}`,
-              description: e.description || 'Document processed and indexed in PostgreSQL.',
+              description: e.description || 'Document processed and indexed in compliance vault.',
               timestamp: e.created_at ? new Date(e.created_at).toLocaleDateString('en-US') : 'Recent',
               read: false,
               type: 'evidence_uploaded',
@@ -512,6 +634,45 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setIsBackendConnected(false);
     } finally {
       isFetchingBackendRef.current = false;
+      setIsAuthLoading(false);
+    }
+  }, []);
+
+  // Clear all local authenticated session and business data
+  const clearAllLocalState = useCallback(() => {
+    authStorage.clearToken();
+    setIsAuthenticated(false);
+    setIsAuthLoading(false);
+    setActiveUser(INITIAL_USER);
+    setCurrentOrg(INITIAL_ORG);
+    setOrganizations([]);
+    setUsersList([]);
+
+    // Clear all tenant business records to guarantee no cross-user data leakage
+    setMasterEvidence([]);
+    setMasterControls([]);
+    setMasterGaps([]);
+    setMasterReviewQueue([]);
+    setMasterAuditTrail([]);
+    setMasterNotifications([]);
+
+    // Clear active selections and modal states
+    setSelectedEvidenceId(null);
+    setSelectedControlId(null);
+    setSelectedAuditLogId(null);
+    setSelectedGapId(null);
+    setSelectedReviewItem(null);
+    setIsSearchOpen(false);
+    setIsUploadModalOpen(false);
+    setIsAIChatOpen(false);
+    setAIChatEvidenceId(null);
+    setActiveView('overview');
+    setActiveFrameworkFilter('all');
+    setIsAuthModalOpen(false);
+    setAuthModalMode('login');
+
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/');
     }
   }, []);
 
@@ -519,14 +680,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     const handleUnauthorized = () => {
       api.auth.logout();
-      setIsAuthenticated(false);
-      setOrganizations([]);
+      clearAllLocalState();
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('pramana:unauthorized', handleUnauthorized);
       return () => window.removeEventListener('pramana:unauthorized', handleUnauthorized);
     }
-  }, []);
+  }, [clearAllLocalState]);
 
   useEffect(() => {
     refreshBackendData();
@@ -591,7 +751,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const assignedRole: Role = normalizeRole(me.role || matchedUser?.role || 'ciso');
       const normRole = normalizeRole(assignedRole);
       const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
-      const isSuper = assignedRole === 'super_admin' || normRole === 'super_admin';
+      const isSuper = assignedRole === 'super_admin' || normRole === 'super_admin' || !!me.is_super_admin;
       const roleTitle = isSuper ? 'Super Admin' : (roleCfg ? roleCfg.title : 'Enterprise CISO');
 
       const assignedUser: UserProfile = {
@@ -605,13 +765,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         organizationName: activeOrg.name,
         lastActive: 'Active now',
         status: me.is_active ? 'active' : 'inactive',
+        assignedRoles: me.assigned_roles,
+        canSwitchRole: me.can_switch_role,
+        canSwitchOrganization: me.can_switch_organization,
+        isSuperAdmin: me.is_super_admin,
+        permissions: me.permissions,
+        accessiblePages: me.accessible_pages,
+        pageAccessLevels: me.page_access_levels,
       };
 
       setActiveUser(assignedUser);
       setIsAuthenticated(true);
       setIsAuthModalOpen(false);
 
-      const defaultPage = getRoleDefaultPage(assignedUser.role);
+      const defaultPage = getRoleDefaultPage(assignedUser);
       setActiveView(defaultPage);
 
       showToast(
@@ -705,7 +872,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const cleanEmail = email.toLowerCase().trim();
     try {
       const res = await api.auth.resetPassword(cleanEmail, newPassword);
-      showToast('Password Updated', res.message || 'Password has been safely updated in PostgreSQL.', 'success');
+      showToast('Password Updated', res.message || 'Password has been safely updated.', 'success');
       return true;
     } catch (err: any) {
       console.error('[Pramana] Password reset error:', err);
@@ -714,70 +881,83 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-  const logout = () => {
-    api.auth.logout();
-    setIsAuthenticated(false);
-    setOrganizations([]);
-    showToast('Signed Out', 'You have been safely logged out of your tenant vault.', 'info');
+  const logout = async (): Promise<void> => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await api.auth.logout();
+    } catch (err: any) {
+      console.warn('[Pramana] Server logout warning:', err?.message || err);
+    } finally {
+      clearAllLocalState();
+      setIsLoggingOut(false);
+      showToast('Signed Out', 'You have been safely signed out. All session data has been cleared.', 'info');
+    }
   };
 
   const switchOrganization = (orgId: string) => {
+    // Only allow if user can switch organization or is super admin
+    if (!activeUser.canSwitchOrganization && !activeUser.isSuperAdmin) {
+      showToast('Access Restricted', 'Tenant users cannot switch across isolated organizations.', 'warning');
+      return;
+    }
     const org = organizations.find((o) => o.id === orgId);
     if (org) {
       setCurrentOrg(org);
-      const userMatch = usersList.find((u) => u.organizationId === org.id) || {
-        id: `usr-${org.id}`,
-        name: `${org.name} User`,
-        email: `admin@${org.slug}.com`,
-        role: 'ciso' as const,
-        roleTitle: 'Enterprise CISO',
-        avatar: '',
+      setActiveUser((prev) => ({
+        ...prev,
         organizationId: org.id,
         organizationName: org.name,
-        lastActive: 'Just now',
-        status: 'active' as const,
-      };
-      setActiveUser(userMatch);
+      }));
       showToast('Switched Tenant Vault', `Now displaying isolated compliance data for ${org.name}.`, 'info');
       refreshBackendData(org.id, true);
     }
   };
 
-  const switchRole = (role: Role) => {
-    const normRole = normalizeRole(role);
-    const config = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
-    const matchedUser = usersList.find((u) => u.role === role || u.role === normRole);
+  const switchRole = async (roleName: string): Promise<boolean> => {
+    try {
+      showToast('Switching Role', `Activating ${roleName.replace(/_/g, ' ')} context...`, 'info');
+      const res = await api.auth.switchRole(roleName);
+      if (!res.access_token) {
+        throw new Error('Failed to obtain new access token for switched role.');
+      }
 
-    const updatedUser: UserProfile = {
-      id: matchedUser ? matchedUser.id : `usr-${role}`,
-      name: matchedUser ? matchedUser.name : config.name,
-      email: matchedUser ? matchedUser.email : `${role}@acme.com`,
-      role,
-      roleTitle: config.title,
-      avatar: config.avatar,
-      organizationId: currentOrg.id,
-      organizationName: currentOrg.name,
-      lastActive: 'Just now',
-      status: 'active',
-    };
+      const normRole = normalizeRole(res.user.role as Role);
+      const isSuper = normRole === 'super_admin' || !!res.is_super_admin;
+      const roleCfg = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
 
-    setActiveUser(updatedUser);
+      const updatedUser: UserProfile = {
+        ...activeUser,
+        role: normRole,
+        roleTitle: isSuper ? 'Super Admin' : (roleCfg ? roleCfg.title : normRole),
+        assignedRoles: res.assigned_roles,
+        canSwitchRole: res.can_switch_role,
+        canSwitchOrganization: res.can_switch_organization,
+        isSuperAdmin: res.is_super_admin,
+        permissions: res.permissions,
+        accessiblePages: res.accessible_pages,
+        pageAccessLevels: res.page_access_levels,
+      };
+      setActiveUser(updatedUser);
 
-    // If current view is restricted (❌) for this role, redirect to their primary allowed view
-    if (!hasPageAccess(role, activeView)) {
-      const targetPage = getRoleDefaultPage(role);
-      setActiveView(targetPage);
+      // Check if current activeView is still accessible
+      if (res.accessible_pages && !res.accessible_pages.includes(activeView)) {
+        const newDefault = getRoleDefaultPage(updatedUser);
+        setActiveView(newDefault);
+      }
+
       showToast(
-        `Switched Role: ${config.title}`,
-        `Current view '${activeView}' is restricted (❌) for ${config.title}. Navigated to '${targetPage}'.`,
-        'info'
-      );
-    } else {
-      showToast(
-        `Switched Role: ${config.title}`,
-        config.description,
+        'Role Switched',
+        `Active role changed to ${updatedUser.roleTitle}. Dynamic navigation & permissions updated.`,
         'success'
       );
+
+      await refreshBackendData(currentOrg.id, true);
+      return true;
+    } catch (err: any) {
+      console.error('[Pramana] Role switch failed:', err);
+      showToast('Role Switch Failed', err.message || 'Could not switch active role.', 'error');
+      return false;
     }
   };
 
@@ -846,7 +1026,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const extension = file.name.split('.').pop()?.toLowerCase() || 'pdf';
     const fileType = (['pdf', 'json', 'png', 'docx', 'csv'].includes(extension) ? extension : 'pdf') as any;
     let newId = `ev-${Date.now().toString().slice(-4)}`;
-    let aiResult: any = null;
+    let returnedMappings: any[] = [];
 
     try {
       if (isBackendConnected) {
@@ -857,18 +1037,35 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           `Evidence uploaded by ${activeUser.name}: ${file.name}`
         );
         newId = `ev-${uploadRes.id}`;
+        returnedMappings = uploadRes.mappings || [];
       }
     } catch (err: any) {
-      console.warn('Backend upload fallback:', err.message);
+      console.error('Backend upload failed:', err.message || err);
+      showToast('Upload Failed', err.message || 'Evidence upload could not be completed.', 'error');
+      throw err;
     }
 
-    const confidence = aiResult?.matched_controls?.[0]?.confidence_score
-      ? Math.round(aiResult.matched_controls[0].confidence_score * 100)
-      : 0;
+    const firstMapping = returnedMappings[0];
+    const confidence = firstMapping?.confidence_score != null
+      ? Math.round(firstMapping.confidence_score * 100)
+      : null;
+    const coverageScore = firstMapping?.coverage_score != null
+      ? Math.round(firstMapping.coverage_score)
+      : null;
 
-    const mappedControlCodes = aiResult?.matched_controls?.length
-      ? aiResult.matched_controls.map((m: any) => m.control_code)
+    const mappedControlCodes = returnedMappings.length
+      ? returnedMappings.map((m: any) => m.control?.control_code || `CTRL-${m.control_id}`)
       : [];
+
+    const mappedFrameworks = Array.from(new Set(returnedMappings.map((m: any) => {
+      const raw = (m.control?.framework_code || '').toLowerCase();
+      if (raw.includes('iso') || raw.includes('27001')) return 'iso-27001';
+      if (raw.includes('soc')) return 'soc-2';
+      if (raw.includes('pci')) return 'pci-dss';
+      if (raw.includes('dpdp')) return 'dpdp';
+      if (raw.includes('nist')) return 'nist-csf';
+      return 'iso-27001';
+    }))) as any[];
 
     const newEvidenceItem: EvidenceItem = {
       id: newId,
@@ -881,42 +1078,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       version: 'v1.0',
       owner: activeUser.name,
       ownerAvatar: activeUser.avatar,
-      frameworks: [],
+      frameworks: mappedFrameworks,
       mappedControlIds: mappedControlCodes,
-      processingStatus: 'needs_review',
+      processingStatus: returnedMappings.length > 0 ? 'needs_review' : 'needs_review',
       aiConfidence: confidence,
-      aiReasoning: aiResult?.summary || '',
-      extractedTextExcerpt: aiResult?.citations?.[0]?.text || '',
+      coverageScore: coverageScore,
+      aiReasoning: firstMapping?.ai_explanation || '',
+      extractedTextExcerpt: firstMapping?.requirement_supported || firstMapping?.notes || '',
       uploadDate: new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }),
       lastUpdated: new Date().toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }),
       decisionType: 'pending_human_review',
-      securityLevel: (aiResult?.data_classification as any) || 'Confidential',
+      securityLevel: 'Confidential',
     };
 
     setMasterEvidence((prev) => [newEvidenceItem, ...prev]);
 
     // If real AI matched controls, add to Auditor Review Queue
-    const firstMatched = aiResult?.matched_controls?.[0];
-    if (firstMatched) {
-      const newReviewItem: ReviewQueueItem = {
-        id: `rev-${Date.now().toString().slice(-4)}`,
+    if (returnedMappings.length > 0) {
+      const newReviewItems: ReviewQueueItem[] = returnedMappings.map((m: any) => ({
+        id: `rev-${m.id}`,
         organizationId: currentOrg.id,
         evidenceId: newId,
         evidenceName: newEvidenceItem.name,
         evidenceVersion: 'v1.0',
         fileType: newEvidenceItem.fileType,
-        framework: firstMatched?.framework || 'compliance',
-        controlId: firstMatched.control_code,
-        controlTitle: firstMatched.title || 'Compliance Control',
-        aiConfidence: confidence,
-        aiReasoning: firstMatched.reasoning || newEvidenceItem.aiReasoning,
-        evidenceExcerpt: firstMatched.cited_text || newEvidenceItem.extractedTextExcerpt,
+        framework: m.control?.framework_code || 'compliance',
+        controlId: m.control?.control_code || `CTRL-${m.control_id}`,
+        controlTitle: m.control?.title || 'Compliance Control',
+        aiConfidence: m.confidence_score != null ? Math.round(m.confidence_score * 100) : null,
+        coverageScore: m.coverage_score != null ? Math.round(m.coverage_score) : null,
+        aiReasoning: m.ai_explanation || newEvidenceItem.aiReasoning,
+        evidenceExcerpt: m.requirement_supported || newEvidenceItem.extractedTextExcerpt,
         assignedAuditor: 'Assigned Auditor',
         lastUpdated: newEvidenceItem.lastUpdated,
         status: 'pending_review',
         decisionType: 'pending_human_review',
-      };
-      setMasterReviewQueue((prev) => [newReviewItem, ...prev]);
+      }));
+      setMasterReviewQueue((prev) => [...newReviewItems, ...prev]);
     }
 
     await addAuditLog(
@@ -930,6 +1128,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
 
     showToast('Evidence Uploaded', `File ${file.name} uploaded successfully.`, 'success');
+    await refreshBackendData(undefined, true);
   };
 
   // ── Auditor-in-the-Loop Decisions ──────────────────────────────────────────
@@ -990,6 +1189,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // Record to Backend API
       try {
         if (isBackendConnected) {
+          const mappingNumId = parseInt(reviewId.replace('rev-', ''), 10);
+          if (!isNaN(mappingNumId)) {
+            await api.mappings.review(mappingNumId, {
+              mapping_status: 'approved',
+              notes: notes || `Approved by auditor ${activeUser.name}`,
+            });
+          }
           await api.audits.decisions.create({
             audit_id: 1,
             decided_by: getNumericId(activeUser.id),
@@ -997,8 +1203,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             comments: notes || `Approved by auditor ${activeUser.name}`,
           });
         }
-      } catch {
-        // Logged locally
+      } catch (err: any) {
+        console.warn('[Pramana] Error syncing auditor approval to backend:', err.message || err);
       }
 
       await addAuditLog(
@@ -1056,6 +1262,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       try {
         if (isBackendConnected) {
+          const mappingNumId = parseInt(reviewId.replace('rev-', ''), 10);
+          if (!isNaN(mappingNumId)) {
+            await api.mappings.review(mappingNumId, {
+              mapping_status: 'rejected',
+              notes: comment || `Rejected by auditor ${activeUser.name}`,
+            });
+          }
           await api.audits.decisions.create({
             audit_id: 1,
             decided_by: getNumericId(activeUser.id),
@@ -1063,8 +1276,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             comments: comment || `Rejected by auditor ${activeUser.name}`,
           });
         }
-      } catch {
-        // Logged locally
+      } catch (err: any) {
+        console.warn('[Pramana] Error syncing auditor rejection to backend:', err.message || err);
       }
 
       await addAuditLog(
@@ -1347,10 +1560,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // ── AI Engine Direct Actions ────────────────────────────────────────────────
   const runAIGapAnalysis = async () => {
     try {
-      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
-      return {};
+      showToast('AI Gap Analysis Started', 'Analyzing compliance gaps across enrolled frameworks...', 'info');
+
+      const orgFws = await api.compliance.getOrganizationFrameworks().catch(() => []);
+      const activeFws = Array.isArray(orgFws) ? orgFws.filter((f: any) => f.status === 'active') : [];
+
+      if (activeFws.length === 0) {
+        showToast('No Frameworks Enrolled', 'Please enroll in compliance frameworks before running gap analysis.', 'warning');
+        return { total_assessed: 0, gaps: 0 };
+      }
+
+      let totalAssessed = 0;
+      let totalGaps = 0;
+      const frameworkResults = [];
+
+      for (const fw of activeFws) {
+        try {
+          const runRes = await api.assessments.create(fw.framework_id, fw.framework_version_id);
+          frameworkResults.push(runRes);
+          if (runRes.results) {
+            totalAssessed += runRes.results.length;
+            totalGaps += runRes.results.filter((r: any) => r.assessment_status !== 'Satisfied').length;
+          }
+        } catch (fwErr: any) {
+          console.warn(`Assessment for framework ${fw.framework_code || fw.framework_id} warning:`, fwErr.message);
+        }
+      }
+
+      await refreshBackendData(undefined, true);
+      showToast(
+        'AI Gap Analysis Completed',
+        `Assessed ${totalAssessed} controls across ${activeFws.length} frameworks: ${totalGaps} gaps identified and persisted.`,
+        'success'
+      );
+
+      return {
+        total_assessed: totalAssessed,
+        total_gaps: totalGaps,
+        framework_count: activeFws.length,
+        frameworks: frameworkResults,
+      };
     } catch (err: any) {
-      showToast('AI Gap Analysis Failed', err.message, 'error');
+      showToast('AI Gap Analysis Failed', err.message || 'Could not complete gap analysis', 'error');
       throw err;
     }
   };
@@ -1359,31 +1610,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
       showToast('AI Evaluation Started', 'Evaluating control evidence using local RAG...', 'info');
       const result = await api.compliance.evaluateControl(controlId);
-      showToast('Control Evaluated', `Status: ${result.evaluation?.status || 'Assessed'} (Confidence: ${Math.round((result.evaluation?.confidence || 0) * 100)}%)`, 'success');
-      await refreshBackendData();
-      return result;
+      const confStr = result.confidence != null ? `${Math.round(result.confidence * 100)}%` : 'Not available';
+      const evaluation = {
+        status: result.assessment_status || result.status || 'Assessed',
+        coverage_score: result.coverage_score,
+        confidence: result.confidence ?? null,
+        findings: result.explanation || result.reasoning || (result.gaps?.length ? result.gaps.join('. ') : 'Evaluation completed.'),
+        remediation: result.recommendations?.length ? result.recommendations.join('. ') : (result.gaps?.length ? result.gaps.join('. ') : undefined),
+        citations: result.citations || [],
+        missing_requirements: result.missing_requirements || [],
+        requirements_evaluations: result.requirements_evaluations || [],
+      };
+      const enrichedResult = { ...result, evaluation };
+      showToast('Control Evaluated', `Status: ${evaluation.status} (Confidence: ${confStr})`, 'success');
+      await refreshBackendData(undefined, true);
+      return enrichedResult;
     } catch (err: any) {
-      showToast('Control Evaluation Failed', err.message, 'error');
+      showToast('Control Evaluation Failed', err.message || 'Evaluation failed', 'error');
       throw err;
     }
   };
 
   const analyzeEvidenceAI = async (evidenceId: number) => {
     try {
-      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
-      return {};
+      showToast('AI Analysis Started', 'Running multi-framework RAG assessment for this evidence...', 'info');
+      const res = await api.assessments.assessEvidence(evidenceId);
+      showToast(
+        'AI Analysis Completed',
+        `Assessed ${res.total_controls_assessed} controls: ${res.total_compliant} satisfied, ${res.total_gaps_identified} gaps.`,
+        'success'
+      );
+      await refreshBackendData(undefined, true);
+
+      const allControls = (res.frameworks || []).flatMap((f: any) => f.controls || []);
+      const matched_controls = allControls.map((c: any) => ({
+        control_code: c.control_code,
+        title: c.title,
+        coverage_score: c.coverage_score,
+        confidence_score: c.confidence_score,
+        reasoning: c.reasoning || c.explanation,
+      }));
+      const allGaps = allControls.flatMap((c: any) => c.gaps || []);
+
+      return {
+        run_id: res.frameworks?.[0]?.run_id || 'COMPLETED',
+        status: 'Completed',
+        matched_controls,
+        gaps: allGaps,
+        raw: res,
+      };
     } catch (err: any) {
-      showToast('Document Analysis Failed', err.message, 'error');
+      showToast('Document Analysis Failed', err.message || 'Analysis failed', 'error');
       throw err;
     }
   };
 
   const summarizeEvidenceAI = async (evidenceId: number) => {
     try {
-      showToast('AI Features Disabled', 'AI processing is removed from this build.', 'info');
-      return {};
+      showToast('Generating Summary', 'Extracting executive summary and audit takeaways...', 'info');
+      const res = await api.evidence.summarize(evidenceId);
+      showToast('Summary Generated', `Extracted summary for ${res.file_name}`, 'success');
+      return res;
     } catch (err: any) {
-      showToast('Summarization Failed', err.message, 'error');
+      showToast('Summarization Failed', err.message || 'Summarization failed', 'error');
       throw err;
     }
   };
@@ -1393,7 +1682,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (!res.access_token) {
         throw new Error('Failed to obtain impersonation token.');
       }
-      showToast('Impersonation Active', 'Signed in as target user with audit log recorded in PostgreSQL.', 'success');
+      showToast('Impersonation Active', 'Signed in as target user with audit log recorded.', 'success');
       await refreshBackendData();
     } catch (err: any) {
       showToast('Impersonation Failed', err.message || 'Could not impersonate user', 'error');
@@ -1407,6 +1696,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         backendInfo,
         refreshBackendData,
         isAuthenticated,
+        isAuthLoading,
         isAuthModalOpen,
         setIsAuthModalOpen,
         authModalMode,
@@ -1418,6 +1708,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         signup,
         resetPassword,
         logout,
+        isLoggingOut,
+        switchRole,
         activeView,
         setActiveView,
         activeUser,
@@ -1461,7 +1753,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         resolveGap,
         showToast,
         dismissToast,
-        switchRole,
         markNotificationRead,
         clearAllNotifications,
         createOrganizationBackend,

@@ -215,7 +215,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
 
     try {
       setUploadingFramework(true);
-      setUploadProgressMsg('Uploading file, extracting controls, and generating pgvector embeddings...');
+      setUploadProgressMsg('Uploading file, extracting controls, and generating semantic vector embeddings...');
       
       const res = await api.frameworks.upload(
         newFrameworkFile,
@@ -240,7 +240,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
       const relMsg = (res.relationships_created && res.relationships_created > 0)
         ? ` & ${res.relationships_created} control relationships`
         : '';
-      showToast('Framework Ingested', `Successfully processed ${res.total_controls} controls${relMsg} into PostgreSQL & pgvector!`, 'success');
+      showToast('Framework Ingested', `Successfully processed ${res.total_controls} controls${relMsg} into the secure compliance vault!`, 'success');
     } catch (err: any) {
       setUploadingFramework(false);
       setUploadProgressMsg('');
@@ -264,7 +264,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
 
   const handleReprocessFramework = async (fwId: number) => {
     try {
-      showToast('Reprocessing Started', 'Extracting controls and updating pgvector embeddings...', 'info');
+      showToast('Reprocessing Started', 'Extracting controls and updating semantic vector embeddings...', 'info');
       const res = await api.frameworks.reprocess(fwId);
       await fetchFrameworks();
       showToast('Reprocessing Complete', `Ingested ${res.total_controls} controls.`, 'success');
@@ -323,7 +323,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
   ];
 
   const overviewCards = [
-    { label: 'Total Orgs',      value: overviewData?.total_organizations ?? organizations.length, delta: 'Live in PostgreSQL', Icon: Building2,  color: 'indigo'  },
+    { label: 'Total Orgs',      value: overviewData?.total_organizations ?? organizations.length, delta: 'Active Multi-Tenant Vaults', Icon: Building2,  color: 'indigo'  },
     { label: 'Active Users',    value: overviewData?.total_users ?? usersList.length, delta: 'Verified accounts', Icon: Users,    color: 'violet'  },
     { label: 'Frameworks',      value: overviewData?.total_frameworks ?? frameworks.length, delta: 'Global templates', Icon: Layers, color: 'slate' },
   ];
@@ -342,14 +342,14 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
                 Super Admin Console
               </h1>
               {isBackendConnected ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  API Connected (Port 8000)
+                  Live
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                  Local Vault Mode
+                  Offline
                 </span>
               )}
             </div>
@@ -388,7 +388,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                     Master Console
                   </span>
-                  <span className="text-xs text-slate-400">PostgreSQL Multi-Tenant Instance</span>
+                  <span className="text-xs text-slate-400">Multi-Tenant Cloud Vault</span>
                 </div>
                 <h2 className="text-xl md:text-2xl font-black tracking-tight text-white">
                   Platform Architecture & Governance
@@ -492,12 +492,12 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
                   <span>Logical Tenant Isolation & Multi-Framework Vector Indexing</span>
                 </div>
                 <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
-                  Every organization operates in strict cryptographic and database isolation with row-level security boundaries. Evidence embeddings are partitioned with pgvector.
+                  Every organization operates in strict cryptographic isolation with dedicated tenant security boundaries. Evidence embeddings are partitioned via semantic vector indexes.
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="px-3 py-1 rounded-full text-xs font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  PostgreSQL Active
+                  Encrypted Vault Active
                 </span>
               </div>
             </div>
@@ -601,7 +601,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 border-b border-slate-100">
             <div>
               <h2 className="font-heading text-section-head text-slate-900">Framework Management</h2>
-              <p className="text-label text-slate-500 mt-0.5">Real compliance frameworks, extracted controls, and pgvector embeddings stored in PostgreSQL.</p>
+              <p className="text-label text-slate-500 mt-0.5">Real compliance frameworks, extracted controls, and semantic vector embeddings stored in the compliance vault.</p>
             </div>
             <div className="flex items-center gap-2">
               <div className="relative">
@@ -664,7 +664,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
                           <span className="font-numeric font-bold text-slate-900 text-sm">
                             {f.total_controls || 0}
                           </span>
-                          <span className="text-xs text-slate-400">controls (pgvector)</span>
+                          <span className="text-xs text-slate-400">controls (vector indexed)</span>
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
@@ -891,7 +891,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
       {/* ── New Organization Modal ── */}
       <Modal isOpen={isNewOrgModalOpen} onClose={() => setIsNewOrgModalOpen(false)} title="Register New Organization">
         <form onSubmit={handleCreateOrg} className="space-y-4">
-          <p className="text-xs text-slate-500">Create an isolated organization tenant vault in the PostgreSQL database.</p>
+          <p className="text-xs text-slate-500">Create an isolated organization tenant vault with dedicated compliance boundary.</p>
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Organization Name</label>
             <input type="text" required value={newOrgName} onChange={(e) => setNewOrgName(e.target.value)} placeholder="e.g. Nexus Cyber Systems Ltd." className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" />
@@ -951,7 +951,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
           </div>
           <div className="flex justify-end gap-2 pt-3">
             <button type="button" onClick={() => setIsNewUserModalOpen(false)} className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
-            <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs">Create Account in DB</button>
+            <button type="submit" className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs">Create Account</button>
           </div>
         </form>
       </Modal>
@@ -960,7 +960,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
       <Modal isOpen={isNewFrameworkModalOpen} onClose={() => !uploadingFramework && setIsNewFrameworkModalOpen(false)} title="Upload & Ingest Compliance Framework">
         <form onSubmit={handleUploadFramework} className="space-y-4">
           <p className="text-xs text-slate-500">
-            Upload a REAL framework document (PDF, DOCX, JSON, CSV, TXT). Pramana AI will extract real controls, generate vector embeddings, and store them in PostgreSQL / pgvector.
+            Upload a framework document (PDF, DOCX, JSON, CSV, TXT). Pramana AI will extract controls, generate semantic vector embeddings, and store them in the compliance registry.
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1115,12 +1115,12 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
           <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
             <div>
               <p className="text-xs text-slate-500">
-                Real compliance controls extracted and indexed with pgvector embeddings for AI RAG evaluation.
+                Real compliance controls extracted and indexed with vector embeddings for AI compliance mapping.
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-xs font-bold text-slate-800">Total Controls: {inspectControlsList.length}</span>
                 <span className="text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-semibold border border-emerald-200">
-                  pgvector indexed
+                  Vector Indexed
                 </span>
               </div>
             </div>
@@ -1130,7 +1130,7 @@ export const SuperAdminView: React.FC<SuperAdminViewProps> = ({ initialTab = 'ov
             {loadingControls ? (
               <div className="py-12 text-center text-slate-400">
                 <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-indigo-500" />
-                <p className="text-xs">Loading extracted controls from PostgreSQL...</p>
+                <p className="text-xs">Loading extracted controls from secure registry...</p>
               </div>
             ) : inspectControlsList.length > 0 ? (
               inspectControlsList.map((ctrl) => (

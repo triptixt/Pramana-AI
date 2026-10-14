@@ -21,6 +21,8 @@ from app.services.rbac_service import get_user_effective_permissions, initialize
 
 
 def check_is_admin(user: User, db: Session) -> bool:
+    if not user or user.organization_id != 1:
+        return False
     if user.role and user.role.lower() in ["super_admin", "superadmin", "admin"]:
         return True
     role = db.query(Role).join(UserRole, UserRole.role_id == Role.id).filter(
@@ -28,6 +30,7 @@ def check_is_admin(user: User, db: Session) -> bool:
         Role.name.in_(["super_admin", "admin"])
     ).first()
     return role is not None
+
 
 
 # POST - Create Organization (Super Admin Only)

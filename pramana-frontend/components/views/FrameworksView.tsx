@@ -11,7 +11,9 @@ import {
   Table as TableIcon,
   X,
   RefreshCw,
-  FileCheck
+  FileCheck,
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { FrameworkId } from '../../types';
 
@@ -47,6 +49,7 @@ export const FrameworksView: React.FC = () => {
   const [matrixData, setMatrixData] = useState<any>(null);
   const [matrixLoading, setMatrixLoading] = useState(false);
   const [selectedCell, setSelectedCell] = useState<any>(null);
+  const [assessingFwId, setAssessingFwId] = useState<number | null>(null);
 
   // Load Frameworks from backend
   const loadFrameworkData = async () => {
@@ -152,12 +155,12 @@ export const FrameworksView: React.FC = () => {
           {loading ? (
             <div className="py-16 text-center text-slate-500 text-sm">
               <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-2" />
-              Loading compliance frameworks from PostgreSQL...
+              Loading compliance frameworks...
             </div>
           ) : realFrameworks.length === 0 ? (
             <div className="py-16 text-center text-slate-400 text-sm">
               <Layers className="w-10 h-10 mx-auto mb-2 text-slate-300" />
-              No compliance frameworks registered in the database.
+              No compliance frameworks registered in the catalog.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -217,23 +220,60 @@ export const FrameworksView: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Primary Navigation Action */}
-                      <button
-                        onClick={() => {
-                          const targetFw = getFrameworkKey(fw.code || fw.name || fw.id);
-                          setActiveFrameworkFilter(targetFw);
-                          setActiveView('controls');
-                        }}
-                        className="w-full py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <FileCheck className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Inspect & Map Controls</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                      {/* Actions: Run AI Assessment & Inspect Controls */}
+                      <div className="space-y-2">
+                        <button
+                          disabled={assessingFwId === fw.id}
+                          onClick={async () => {
+                            try {
+                              setAssessingFwId(fw.id);
+                              showToast('AI Assessment Started', `Running RAG compliance evaluation for ${fw.name}...`, 'info');
+                              const res = await api.assessments.create(fw.id);
+                              showToast(
+                                'Assessment Complete',
+                                `Evaluated ${res.total_controls || res.assessed_successfully || 0} controls with status '${res.status}'.`,
+                                'success'
+                              );
+                              loadFrameworkData();
+                            } catch (err: any) {
+                              showToast('Assessment Error', err.message || 'Could not complete assessment', 'error');
+                            } finally {
+                              setAssessingFwId(null);
+                            }
+                          }}
+                          className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-semibold shadow-xs flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                        >
+                          {assessingFwId === fw.id ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Evaluating Controls...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>Run AI Compliance Assessment</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const targetFw = getFrameworkKey(fw.code || fw.name || fw.id);
+                            setActiveFrameworkFilter(targetFw);
+                            setActiveView('controls');
+                          }}
+                          className="w-full py-2.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <FileCheck className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Inspect & Map Controls</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
               })}
+
             </div>
           )}
         </div>
@@ -352,7 +392,7 @@ export const FrameworksView: React.FC = () => {
                                 </div>
 
                                 <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-200/50">
-                                  <span>Confidence: {Math.round((evalItem.confidence || 0) * 100)}%</span>
+                                  <span>Confidence: {evalItem.confidence != null ? `${Math.round(evalItem.confidence * 100)}%` : 'Not available'}</span>
                                   <span className="font-semibold text-indigo-600">
                                     {evalItem.evidence_count} evidence doc{evalItem.evidence_count === 1 ? '' : 's'}
                                   </span>
@@ -408,7 +448,7 @@ export const FrameworksView: React.FC = () => {
                       <span className="text-slate-400">•</span>
                       <span className="font-bold text-slate-800">Confidence:</span>
                       <span className="font-extrabold text-indigo-700">
-                        {Math.round((selectedCell.confidence || 0) * 100)}%
+                        {selectedCell.confidence != null ? `${Math.round(selectedCell.confidence * 100)}%` : 'Not available'}
                       </span>
                     </div>
                   </div>

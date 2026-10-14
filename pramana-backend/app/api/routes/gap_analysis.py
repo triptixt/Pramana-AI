@@ -47,8 +47,10 @@ def create_gap(
     new_gap = GapAnalysis(
         organization_id=target_org_id,
         control_id=gap_data.control_id,
+        audit_id=gap_data.audit_id,
         status=gap_data.status,
-        severity=gap_data.severity,
+        severity=gap_data.severity or "medium",
+        severity_reason=gap_data.severity_reason,
         findings=gap_data.findings,
         recommendation=gap_data.recommendation
     )
@@ -127,10 +129,18 @@ def update_gap(
             detail="Access denied to gap analysis from another organization"
         )
 
-    gap.organization_id = gap_data.organization_id
+    # Prevent unauthorized cross-organization reassignment (Issue #4)
+    if "manage_organizations" in perms and gap_data.organization_id:
+        gap.organization_id = gap_data.organization_id
+    else:
+        gap.organization_id = current_user.organization_id
+
     gap.control_id = gap_data.control_id
+    if gap_data.audit_id is not None:
+        gap.audit_id = gap_data.audit_id
     gap.status = gap_data.status
-    gap.severity = gap_data.severity
+    gap.severity = gap_data.severity or "medium"
+    gap.severity_reason = gap_data.severity_reason
     gap.findings = gap_data.findings
     gap.recommendation = gap_data.recommendation
 

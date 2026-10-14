@@ -93,7 +93,7 @@ export const UploadEvidenceModal: React.FC = () => {
           <span>Upload Security & Compliance Evidence</span>
         </div>
       }
-      subtitle="Pramana AI will automatically scan your document, extract security clauses, and save to PostgreSQL database."
+      subtitle="Pramana AI will automatically scan your document, extract security clauses, and save to your secure compliance vault."
       maxWidth="lg"
     >
       <div className="space-y-4">

@@ -33,5 +33,13 @@ class AIOutput(Base):
         nullable=False
     )
 
+    control_id = Column(
+        Integer,
+        ForeignKey("controls.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Relationships
     ai_run = relationship("AIRun", back_populates="outputs")
+    control = relationship("Control")

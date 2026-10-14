@@ -25,6 +25,7 @@ export const ReviewQueueView: React.FC = () => {
   const { reviewQueueList, setSelectedReviewItem, setSelectedEvidenceId, activeUser } = useApp();
 
   const access = getPageAccess(activeUser.role, 'review-queue');
+  const isReadOnly = access === 'View' || activeUser.role === 'internal_auditor';
 
   const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'high_confidence' | 'low_confidence' | 'evidence_requested'>('all');
 
@@ -36,8 +37,8 @@ export const ReviewQueueView: React.FC = () => {
     }
 
     if (activeFilter === 'pending') return item.status === 'pending_review';
-    if (activeFilter === 'high_confidence') return item.aiConfidence >= 90;
-    if (activeFilter === 'low_confidence') return item.aiConfidence < 90;
+    if (activeFilter === 'high_confidence') return item.aiConfidence != null && item.aiConfidence >= 90;
+    if (activeFilter === 'low_confidence') return item.aiConfidence != null && item.aiConfidence < 90;
     if (activeFilter === 'evidence_requested') return item.status === 'evidence_requested';
     return true;
   });
@@ -52,6 +53,16 @@ export const ReviewQueueView: React.FC = () => {
           <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
             Auditor Review Queue
           </h1>
+          {isReadOnly && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+              <Eye className="w-3.5 h-3.5" /> Read-Only
+            </span>
+          )}
+          {activeUser.role === 'external_auditor' && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <ShieldCheck className="w-3.5 h-3.5" /> Read & Write Authorized
+            </span>
+          )}
         </div>
         <p className="text-xs md:text-sm text-slate-500 mt-1">
           Authorized human auditor decision portal for validating AI-suggested compliance control mappings.
@@ -59,22 +70,46 @@ export const ReviewQueueView: React.FC = () => {
       </div>
 
       {/* Prominent Mandatory Compliance Governance Banner */}
-      <div className="p-4 md:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-50 border border-amber-300/80 text-amber-950 flex items-start gap-3.5 shadow-xs">
-        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 border border-amber-200">
-          <Lock className="w-5 h-5" />
+      {isReadOnly ? (
+        <div className="p-4 md:p-5 rounded-2xl bg-gradient-to-r from-blue-500/10 via-blue-500/5 to-slate-50 border border-blue-300/80 text-blue-950 flex items-start gap-3.5 shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0 mt-0.5 border border-blue-200">
+            <Eye className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-blue-900 flex items-center gap-2">
+              <span>Internal Auditor Assurance Mode</span>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-blue-200 text-blue-900">
+                Read-Only Access
+              </span>
+            </h3>
+            <p className="text-xs text-blue-900/90 mt-1 leading-relaxed">
+              Internal auditors have <strong>view-only access</strong> to review queue candidate mappings, AI confidence scores, and recorded auditor decisions. Formal review sign-off and write decisions are restricted to external auditors and compliance officers.
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
-            <span>Mandatory Auditor Control Governance Principle</span>
-            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-200 text-amber-900">
-              ISO/SOC2 Standard
-            </span>
-          </h3>
-          <p className="text-xs text-amber-900/90 mt-1 leading-relaxed">
-            <strong>AI-generated mappings are candidate suggestions only.</strong> Final compliance certification & control verification decisions must always remain under the explicit authority of authorized human auditors.
-          </p>
+      ) : (
+        <div className="p-4 md:p-5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-slate-50 border border-amber-300/80 text-amber-950 flex items-start gap-3.5 shadow-xs">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 border border-amber-200">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-amber-900 flex items-center gap-2">
+              <span>Mandatory Auditor Control Governance Principle</span>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-amber-200 text-amber-900">
+                ISO/SOC2 Standard
+              </span>
+              {activeUser.role === 'external_auditor' && (
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  Read & Write Authorized
+                </span>
+              )}
+            </h3>
+            <p className="text-xs text-amber-900/90 mt-1 leading-relaxed">
+              <strong>AI-generated mappings are candidate suggestions only.</strong> Final compliance certification & control verification decisions must always remain under the explicit authority of authorized human auditors.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1 custom-scrollbar">
@@ -132,7 +167,9 @@ export const ReviewQueueView: React.FC = () => {
                       ? `Human Decision (${item.humanDecisionBy || 'Auditor'})`
                       : isRejected
                       ? `Rejected by Auditor`
-                      : `AI Suggestion (${item.aiConfidence}%)`}
+                      : item.aiConfidence != null
+                      ? `AI Suggestion (${item.aiConfidence}%)`
+                      : `AI Suggestion (Not available)`}
                   </StatusBadge>
                 </div>
               </div>
@@ -158,7 +195,16 @@ export const ReviewQueueView: React.FC = () => {
                     <span className="text-xs font-bold text-indigo-900 flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600" /> AI Mapping Reasoning
                     </span>
-                    <span className="text-[11px] font-bold text-indigo-700">Confidence: {item.aiConfidence}%</span>
+                    <div className="flex items-center gap-2">
+                      {item.coverageScore != null && (
+                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          Evidence coverage: {item.coverageScore}%
+                        </span>
+                      )}
+                      <span className="text-[11px] font-bold text-indigo-700">
+                        Confidence: {item.aiConfidence != null ? `${item.aiConfidence}%` : 'Not available'}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-xs text-slate-700 leading-relaxed">{item.aiReasoning}</p>
                 </div>
@@ -197,13 +243,23 @@ export const ReviewQueueView: React.FC = () => {
                 </span>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={() => setSelectedReviewItem(item)}
-                    className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-900/20 hover:from-indigo-700 hover:to-indigo-800 transition-all cursor-pointer"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    Auditor Review & Decision
-                  </button>
+                  {isReadOnly ? (
+                    <button
+                      onClick={() => setSelectedReviewItem(item)}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-semibold text-xs transition-all cursor-pointer"
+                    >
+                      <Eye className="w-4 h-4 text-slate-500" />
+                      Inspect Details (Read-Only)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setSelectedReviewItem(item)}
+                      className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-900/20 hover:from-indigo-700 hover:to-indigo-800 transition-all cursor-pointer"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      Auditor Review & Decision
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -14,7 +14,7 @@ import {
   ChevronRight,
   CheckCircle2,
 } from 'lucide-react';
-import { getPageAccess, hasPageAccess } from '../../lib/rbac';
+import { getPageAccessLevel, canAccessPage } from '../../lib/rbac';
 
 export const OverviewView: React.FC = () => {
   const {
@@ -27,7 +27,7 @@ export const OverviewView: React.FC = () => {
     auditTrailList,
   } = useApp();
 
-  const access = getPageAccess(activeUser.role, 'overview');
+  const access = getPageAccessLevel(activeUser, 'overview');
 
   const totalControls = controlsList.length;
   const coveredControls = controlsList.filter(
@@ -54,7 +54,7 @@ export const OverviewView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {hasPageAccess(activeUser.role, 'reports') && (
+          {canAccessPage(activeUser, 'reports') && (
             <button
               onClick={() => setActiveView('reports')}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-xs text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
@@ -84,7 +84,7 @@ export const OverviewView: React.FC = () => {
             <p className="text-xs text-slate-300 leading-relaxed">
               {totalControls > 0
                 ? `Pramana compliance engine evaluated ${totalControls} controls in the database. Auditor verification is active for ${pendingReviewsCount} review items.`
-                : 'Upload or seed compliance frameworks and evidence in PostgreSQL to begin automated compliance readiness assessment.'}
+                : 'Select compliance frameworks and upload evidence to begin automated compliance readiness assessment.'}
             </p>
           </div>
 
@@ -138,8 +138,14 @@ export const OverviewView: React.FC = () => {
 
         {/* KPI 3 */}
         <div
-          onClick={() => setActiveView('review-queue')}
-          className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-all space-y-3 cursor-pointer group"
+          onClick={() => {
+            if (canAccessPage(activeUser, 'review-queue')) {
+              setActiveView('review-queue');
+            }
+          }}
+          className={`p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-all space-y-3 ${
+            canAccessPage(activeUser, 'review-queue') ? 'cursor-pointer group' : 'opacity-85'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Pending Reviews</span>
@@ -153,15 +159,25 @@ export const OverviewView: React.FC = () => {
               Auditor Queue
             </span>
           </div>
-          <p className="text-xs text-indigo-600 font-semibold group-hover:underline flex items-center gap-1">
-            Review auditor queue <ChevronRight className="w-3.5 h-3.5" />
-          </p>
+          {canAccessPage(activeUser, 'review-queue') ? (
+            <p className="text-xs text-indigo-600 font-semibold group-hover:underline flex items-center gap-1">
+              Review auditor queue <ChevronRight className="w-3.5 h-3.5" />
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400">Auditor reviews active</p>
+          )}
         </div>
 
         {/* KPI 4 */}
         <div
-          onClick={() => setActiveView('gaps')}
-          className="p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-all space-y-3 cursor-pointer group"
+          onClick={() => {
+            if (canAccessPage(activeUser, 'gaps')) {
+              setActiveView('gaps');
+            }
+          }}
+          className={`p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs hover:shadow-md transition-all space-y-3 ${
+            canAccessPage(activeUser, 'gaps') ? 'cursor-pointer group' : 'opacity-85'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Open Gaps</span>
@@ -175,9 +191,13 @@ export const OverviewView: React.FC = () => {
               {highPriorityGaps.length} High Priority
             </span>
           </div>
-          <p className="text-xs text-rose-600 font-semibold group-hover:underline flex items-center gap-1">
-            View gap analysis <ChevronRight className="w-3.5 h-3.5" />
-          </p>
+          {canAccessPage(activeUser, 'gaps') ? (
+            <p className="text-xs text-rose-600 font-semibold group-hover:underline flex items-center gap-1">
+              View gap analysis <ChevronRight className="w-3.5 h-3.5" />
+            </p>
+          ) : (
+            <p className="text-xs text-slate-400">Tracked in gap registry</p>
+          )}
         </div>
       </div>
 
@@ -204,7 +224,7 @@ export const OverviewView: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-600 mt-0.5">{gap.whyIdentified}</p>
                     <div className="mt-2 flex items-center gap-3 text-xs">
-                      {hasPageAccess(activeUser.role, 'gaps') && (
+                      {canAccessPage(activeUser, 'gaps') && (
                         <button onClick={() => setActiveView('gaps')} className="font-semibold text-rose-600 hover:underline cursor-pointer">
                           View Gap & Remediate →
                         </button>
@@ -238,7 +258,7 @@ export const OverviewView: React.FC = () => {
                     AI suggestions generated from uploaded documents awaiting human-in-the-loop verification.
                   </p>
                   <div className="mt-2 flex items-center gap-3 text-xs">
-                    {hasPageAccess(activeUser.role, 'review-queue') && (
+                    {canAccessPage(activeUser, 'review-queue') && (
                       <button onClick={() => setActiveView('review-queue')} className="font-semibold text-amber-700 hover:underline cursor-pointer">
                         Go to Auditor Review Queue →
                       </button>
@@ -249,7 +269,7 @@ export const OverviewView: React.FC = () => {
             ) : null}
 
             {/* Upload evidence prompt */}
-            {(getPageAccess(activeUser.role, 'evidence') === 'Full' || getPageAccess(activeUser.role, 'evidence') === 'Create/Upload') && (
+            {canAccessPage(activeUser, 'evidence') && (getPageAccessLevel(activeUser, 'evidence') === 'Full' || getPageAccessLevel(activeUser, 'evidence') === 'Create/Upload') && (
               <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-start gap-4">
                 <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
                   <FileCheck className="w-5 h-5" />
@@ -277,7 +297,7 @@ export const OverviewView: React.FC = () => {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-slate-900">Recent Audit Activity</h3>
-            {hasPageAccess(activeUser.role, 'audit-trail') && (
+            {canAccessPage(activeUser, 'audit-trail') && (
               <button
                 onClick={() => setActiveView('audit-trail')}
                 className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 cursor-pointer"

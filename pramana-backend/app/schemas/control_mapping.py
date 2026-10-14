@@ -36,6 +36,7 @@ class EvidenceControlMappingCreate(BaseModel):
     control_id: int
     mapping_type: str = "manual" # "manual" | "ai_suggested"
     confidence_score: Optional[float] = None
+    coverage_score: Optional[float] = None
     mapping_status: str = "pending" # "pending" | "approved" | "rejected"
     notes: Optional[str] = None
     ai_explanation: Optional[str] = None
@@ -61,6 +62,7 @@ class EvidenceControlMappingResponse(BaseModel):
     control_id: int
     mapping_type: str
     confidence_score: Optional[float] = None
+    coverage_score: Optional[float] = None
     mapping_status: str
     notes: Optional[str] = None
     ai_explanation: Optional[str] = None

@@ -304,7 +304,7 @@ export const GlobalSearchModal: React.FC = () => {
                   >
                     <div>
                       <p className="text-xs font-bold text-slate-900 group-hover:text-rose-600">{gap.title}</p>
-                      <p className="text-[11px] text-slate-500">Control: {gap.controlId} • Severity: {String(gap.severity || 'medium').toUpperCase()}</p>
+                      <p className="text-[11px] text-slate-500">Control: {gap.controlId} • Severity: {gap.severity ? gap.severity.toUpperCase() : 'UNASSESSED'}</p>
                     </div>
                     <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-rose-600 transition-transform group-hover:translate-x-1" />
                   </button>

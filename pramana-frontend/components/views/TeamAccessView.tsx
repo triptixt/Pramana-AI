@@ -7,7 +7,7 @@ import { Modal } from '../ui/Modal';
 import { UserProfile, Role } from '../../types';
 
 export const TeamAccessView: React.FC = () => {
-  const { currentOrg, activeUser, setActiveUser, usersList, createUserBackend, showToast } = useApp();
+  const { currentOrg, activeUser, usersList, createUserBackend, showToast } = useApp();
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
@@ -88,11 +88,13 @@ export const TeamAccessView: React.FC = () => {
 
         <div className="p-4 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">MFA Enforced</p>
-            <p className="text-2xl font-extrabold text-slate-900 font-mono mt-0.5">100%</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Roles</p>
+            <p className="text-2xl font-extrabold text-indigo-600 font-mono mt-0.5">
+              {new Set(orgUsers.map((u) => u.role)).size}
+            </p>
           </div>
-          <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center">
-            <Lock className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <ShieldCheck className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -108,7 +110,6 @@ export const TeamAccessView: React.FC = () => {
                 <th className="py-3.5 px-4">Organization Vault</th>
                 <th className="py-3.5 px-4">Last Active</th>
                 <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -150,20 +151,6 @@ export const TeamAccessView: React.FC = () => {
                       }`}>
                       {usr.status}
                     </span>
-                  </td>
-
-                  <td className="py-3.5 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => {
-                          setActiveUser(usr);
-                          showToast('Active Role Set', `Switched view persona to ${usr.name}.`, 'info');
-                        }}
-                        className="px-2 py-1 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                      >
-                        Switch Role
-                      </button>
-                    </div>
                   </td>
                 </tr>
               ))}

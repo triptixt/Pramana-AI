@@ -51,49 +51,43 @@ export const AuditTrailView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-              <span>Immutable Audit Trail</span>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
-                SHA-256 Ledger
-              </span>
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Compliance Audit Trail
             </h1>
           </div>
           <p className="text-xs md:text-sm text-slate-500 mt-1">
-            Time-stamped, cryptographically signed log of every evidence upload, AI mapping, and human auditor approval.
+            Time-stamped, verifiable audit log of evidence uploads, AI mappings, and human auditor decisions.
           </p>
         </div>
 
         <button
-          onClick={() => showToast('Audit Trail Export', 'Exporting SHA-256 verified audit log CSV...', 'info')}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-xs text-slate-700 hover:bg-slate-50 transition-all shadow-2xs shrink-0"
+          onClick={() => showToast('Audit Trail Export', 'Exporting audit log CSV...', 'info')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white font-semibold text-xs text-slate-700 hover:bg-slate-50 transition-all shadow-2xs shrink-0 cursor-pointer"
         >
           <Download className="w-4 h-4 text-slate-500" />
           Export Ledger (CSV)
         </button>
       </div>
 
-      {/* Cryptographic Ledger Summary Banner */}
+      {/* Audit Trail Governance Summary Banner */}
       <div className="p-4 rounded-2xl bg-slate-900 text-white flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-300 flex items-center justify-center font-bold">
-            <Lock className="w-5 h-5 text-emerald-400" />
+            <Lock className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
             <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <span>Cryptographic Integrity Verification</span>
-              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono">
-                <CheckCircle2 className="w-3 h-3" /> VERIFIED ACTIVE
-              </span>
+              <span>Tenant Audit Logging</span>
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Entries are appended to an immutable append-only ledger with cryptographic hash chaining.
+              Append-only security event history capturing evidence modifications, AI recommendations, and reviewer sign-offs.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-xs font-mono text-slate-300 bg-slate-800/80 px-4 py-2 rounded-xl border border-slate-700 w-full md:w-auto justify-between md:justify-start">
-          <span>Active Nodes: 3</span>
-          <span className="text-emerald-400">• Hash Chain Intact</span>
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-300 bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700">
+          <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          <span>Active Logging</span>
         </div>
       </div>
 

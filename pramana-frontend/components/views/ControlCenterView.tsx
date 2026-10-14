@@ -248,21 +248,31 @@ export const ControlCenterView: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <span className={`inline-flex items-center gap-1 font-bold text-[10px] uppercase px-2 py-0.5 rounded-full border ${
-                        ctrl.coverageState === 'full'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : ctrl.coverageState === 'partial'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}>
-                        {ctrl.coverageState}
-                      </span>
+                      {ctrl.coverageScore != null ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {ctrl.coverageScore}%
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1 font-bold text-[10px] uppercase px-2 py-0.5 rounded-full border ${
+                          ctrl.coverageState === 'full'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : ctrl.coverageState === 'partial'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {ctrl.coverageState}
+                        </span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <StatusBadge type="ai_suggestion" size="sm">
-                        {ctrl.aiConfidence}%
-                      </StatusBadge>
+                      {ctrl.aiConfidence != null ? (
+                        <StatusBadge type="ai_suggestion" size="sm">
+                          {ctrl.aiConfidence}%
+                        </StatusBadge>
+                      ) : (
+                        <span className="text-[11px] font-medium text-slate-400">Not available</span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4">

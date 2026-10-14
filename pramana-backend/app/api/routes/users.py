@@ -27,7 +27,7 @@ router = APIRouter(
 
 
 def check_is_admin(user: User, db: Session) -> bool:
-    if not user:
+    if not user or user.organization_id != 1:
         return False
     if user.role and user.role.lower() in ["super_admin", "superadmin", "admin"]:
         return True
@@ -36,6 +36,7 @@ def check_is_admin(user: User, db: Session) -> bool:
         Role.name.in_(["super_admin", "admin"])
     ).first()
     return role is not None
+
 
 
 # POST - Create User (CISO / Admin user creation)
@@ -409,4 +410,139 @@ def delete_user(
             "message": f"User '{user_name}' has linked historical audit/evidence records and was deactivated.",
             "deactivated": True
         }
+
+
+# =========================================================
+# USER ASSIGNED ROLES MANAGEMENT (RBAC Multi-Role Support)
+# =========================================================
+
+@router.get("/{user_id}/roles")
+def get_user_roles(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Fetch all assigned roles for a user from user_roles in their organization."""
+    from app.services.rbac_service import get_user_assigned_roles
+
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_users" not in perms and current_user.id != user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_users' required"
+        )
+
+    is_admin = check_is_admin(current_user, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not is_admin and user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Access denied to user from another organization")
+
+    return get_user_assigned_roles(db, user)
+
+
+@router.post("/{user_id}/roles")
+def assign_role_to_user(
+    user_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Assign an additional role to a user in their organization."""
+    from app.services.rbac_service import assign_user_role, get_user_assigned_roles
+
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_users" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_users' required"
+        )
+
+    role_name = body.get("role") or body.get("role_name")
+    if not role_name:
+        raise HTTPException(status_code=400, detail="Role name is required")
+
+    is_admin = check_is_admin(current_user, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not is_admin and user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Access denied to user from another organization")
+
+    norm_role = normalize_role_name(role_name)
+    if not is_admin and norm_role == "super_admin":
+        raise HTTPException(status_code=403, detail="Permission denied: Cannot assign Super Admin role")
+
+    role = assign_user_role(db, user, norm_role)
+
+    # Audit log
+    audit_event = AuditLog(
+        organization_id=user.organization_id,
+        user_id=current_user.id,
+        action="Role Assigned",
+        entity_type="UserRole",
+        entity_id=user.id,
+        details=f"Role '{role.name}' assigned to user '{user.name}' ({user.email}) by {current_user.name}."
+    )
+    db.add(audit_event)
+    db.commit()
+
+    return {
+        "message": f"Role '{role.name}' assigned to {user.name}",
+        "assigned_roles": get_user_assigned_roles(db, user)
+    }
+
+
+@router.delete("/{user_id}/roles/{role_id}")
+def remove_role_from_user(
+    user_id: int,
+    role_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Remove an assigned role link from user_roles."""
+    from app.services.rbac_service import remove_user_role, get_user_assigned_roles
+
+    perms = get_user_effective_permissions(current_user, db)
+    if "manage_users" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: 'manage_users' required"
+        )
+
+    is_admin = check_is_admin(current_user, db)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not is_admin and user.organization_id != current_user.organization_id:
+        raise HTTPException(status_code=403, detail="Access denied to user from another organization")
+
+    try:
+        removed = remove_user_role(db, user, role_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="Role assignment not found for this user")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Audit log
+    audit_event = AuditLog(
+        organization_id=user.organization_id,
+        user_id=current_user.id,
+        action="Role Removed",
+        entity_type="UserRole",
+        entity_id=user.id,
+        details=f"Role ID {role_id} removed from user '{user.name}' ({user.email}) by {current_user.name}."
+    )
+    db.add(audit_event)
+    db.commit()
+
+    return {
+        "message": f"Role removed from {user.name}",
+        "assigned_roles": get_user_assigned_roles(db, user)
+    }
+
 

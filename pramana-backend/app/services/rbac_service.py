@@ -5,7 +5,7 @@ user-role assignments, and permission retrieval.
 Only retains roles and role-permissions for roles actually mapped to existing users.
 """
 
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -57,11 +57,13 @@ PERMISSIONS_DEFINITIONS = [
     ("controls:assigned_controls", "Access to assigned controls only"),
     ("controls:view_assigned", "View assigned controls"),
     ("gaps:full", "Full access to gap analysis"),
+    ("gaps:view", "View-only access to gap analysis"),
     ("gaps:view_review", "View and review access to gap analysis"),
     ("gaps:assigned_gaps", "Access to assigned gaps only"),
     ("gaps:assigned_actions", "Access to assigned gap actions"),
     ("gaps:summary", "Summary access to gap analysis"),
     ("review-queue:full", "Full access to review queue"),
+    ("review-queue:view", "View-only access to review queue"),
     ("review-queue:assigned_items", "Access to assigned review queue items"),
     ("audit-trail:full", "Full access to audit trail"),
     ("audit-trail:assigned_scope", "Access to assigned audit scope"),
@@ -103,9 +105,9 @@ ROLE_PERMISSION_MATRIX: Dict[str, List[str]] = {
         "review-queue:full", "audit-trail:full", "reports:full", "frameworks:full"
     ],
     "internal_auditor": [
-        "view_evidence", "review_ai_results", "view_reports", "manage_audits", "view_audit_logs",
+        "view_evidence", "view_reports", "manage_audits", "view_audit_logs",
         "overview:view", "evidence:view_review", "controls:view_review", "gaps:view_review",
-        "review-queue:full", "audit-trail:full", "reports:full", "frameworks:view"
+        "review-queue:view", "audit-trail:full", "reports:full", "frameworks:view"
     ],
     "control_owner": [
         "manage_controls", "upload_evidence", "view_evidence", "view_reports",
@@ -118,8 +120,8 @@ ROLE_PERMISSION_MATRIX: Dict[str, List[str]] = {
     ],
     "external_auditor": [
         "view_evidence", "review_ai_results", "view_reports", "manage_audits", "view_audit_logs",
-        "overview:limited", "evidence:assigned_only", "controls:assigned_only", "gaps:assigned_only",
-        "review-queue:assigned_items", "audit-trail:audit_scope", "reports:audit_reports", "frameworks:view_assigned"
+        "overview:limited", "evidence:assigned_only", "controls:assigned_only", "gaps:view",
+        "review-queue:full", "audit-trail:audit_scope", "reports:audit_reports", "frameworks:view_assigned"
     ],
     "executive": [
         "view_evidence", "view_reports",
@@ -220,15 +222,13 @@ def ensure_user_role(db: Session, user: User, role_name: Optional[str] = None) -
     # Ensure role permissions for this active role
     ensure_role_permissions_for_role(db, role)
 
-    # Link in user_roles
+    # Link in user_roles without deleting existing assigned roles
     existing_ur = db.query(UserRole).filter(
         UserRole.user_id == user.id,
         UserRole.role_id == role.id
     ).first()
 
     if not existing_ur:
-        # Remove any previous user_roles links for this user
-        db.query(UserRole).filter(UserRole.user_id == user.id).delete()
         ur = UserRole(user_id=user.id, role_id=role.id)
         db.add(ur)
 
@@ -313,43 +313,235 @@ def initialize_rbac(db: Session) -> Dict[str, int]:
     return stats
 
 
+ROLE_TITLES: Dict[str, str] = {
+    "super_admin": "Super Admin",
+    "ciso": "Enterprise CISO",
+    "grc": "GRC / Compliance Manager",
+    "internal_auditor": "Internal Auditor",
+    "control_owner": "Control Owner",
+    "evidence_contributor": "Evidence Contributor",
+    "external_auditor": "External Auditor",
+    "executive": "Executive",
+}
+
+
+def get_role_title(role_name: str) -> str:
+    norm = normalize_role_name(role_name)
+    return ROLE_TITLES.get(norm, role_name.replace("_", " ").title())
+
+
+def get_user_assigned_roles(db: Session, user: User) -> List[Dict[str, Any]]:
+    """
+    Returns all roles actually assigned to this user in their organization from user_roles.
+    """
+    roles = (
+        db.query(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .filter(UserRole.user_id == user.id)
+        .filter(Role.organization_id == user.organization_id)
+        .all()
+    )
+    if not roles and user.role:
+        # Self-heal canonical role link
+        r = ensure_user_role(db, user, user.role)
+        roles = [r]
+
+    active_norm = normalize_role_name(user.role or "")
+    return [
+        {
+            "id": r.id,
+            "name": r.name,
+            "title": get_role_title(r.name),
+            "description": r.description or get_role_description(r.name),
+            "is_active": (normalize_role_name(r.name) == active_norm)
+        }
+        for r in roles
+    ]
+
+
+def assign_user_role(db: Session, user: User, role_name: str) -> Role:
+    """
+    Assigns an additional role to a user in their organization.
+    Preserves existing roles.
+    """
+    canonical_role_name = normalize_role_name(role_name)
+    role = db.query(Role).filter(
+        Role.organization_id == user.organization_id,
+        Role.name == canonical_role_name
+    ).first()
+
+    if not role:
+        role = Role(
+            organization_id=user.organization_id,
+            name=canonical_role_name,
+            description=get_role_description(canonical_role_name)
+        )
+        db.add(role)
+        db.flush()
+
+    ensure_role_permissions_for_role(db, role)
+
+    existing_ur = db.query(UserRole).filter(
+        UserRole.user_id == user.id,
+        UserRole.role_id == role.id
+    ).first()
+
+    if not existing_ur:
+        ur = UserRole(user_id=user.id, role_id=role.id)
+        db.add(ur)
+        db.commit()
+
+    return role
+
+
+def remove_user_role(db: Session, user: User, role_id: int) -> bool:
+    """
+    Removes an assigned role link from user_roles.
+    Prevents removing the user's only role.
+    """
+    assigned = db.query(UserRole).filter(UserRole.user_id == user.id).all()
+    if len(assigned) <= 1:
+        raise ValueError("Cannot remove user's only assigned role")
+
+    target_ur = db.query(UserRole).filter(
+        UserRole.user_id == user.id,
+        UserRole.role_id == role_id
+    ).first()
+
+    if not target_ur:
+        return False
+
+    db.delete(target_ur)
+    db.commit()
+
+    # If the active user.role was this role, switch to another assigned role
+    remaining = (
+        db.query(Role)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .filter(UserRole.user_id == user.id)
+        .first()
+    )
+    if remaining and user.role and remaining.name != user.role:
+        user.role = remaining.name
+        db.commit()
+
+    return True
+
+
+PAGE_KEYS = [
+    'overview',
+    'select-frameworks',
+    'evidence',
+    'controls',
+    'gaps',
+    'review-queue',
+    'audit-trail',
+    'reports',
+    'frameworks',
+    'settings',
+    'super-admin',
+    'admin-organizations',
+    'admin-frameworks',
+    'admin-users'
+]
+
+LEVEL_MAP = {
+    'full': 'Full',
+    'view': 'View',
+    'view_review': 'View/Review',
+    'limited': 'Limited',
+    'assigned_only': 'Assigned only',
+    'create_upload': 'Create/Upload',
+    'assigned_controls': 'Assigned controls',
+    'view_assigned': 'View assigned',
+    'assigned_gaps': 'Assigned gaps',
+    'assigned_actions': 'Assigned actions',
+    'summary': 'Summary',
+    'assigned_items': 'Assigned items',
+    'assigned_scope': 'Assigned scope',
+    'own_activity': 'Own activity',
+    'audit_scope': 'Audit scope',
+    'relevant_reports': 'Relevant reports',
+    'audit_reports': 'Audit reports',
+    'executive_reports': 'Executive reports',
+    'admin_limited': 'Admin/limited'
+}
+
+
+def resolve_user_access_matrix(user: User, permissions: Set[str]) -> Dict[str, Any]:
+    """
+    Resolves accessible pages and page access levels dynamically from the user's effective permissions.
+    """
+    is_super = (user.organization_id == 1 and user.role in ['super_admin', 'superadmin', 'admin'])
+    page_levels: Dict[str, str] = {}
+
+    for p in PAGE_KEYS:
+        level = '❌'
+        if is_super and p in ['super-admin', 'admin-organizations', 'admin-frameworks', 'admin-users']:
+            level = 'Full'
+        elif not is_super and p in ['super-admin', 'admin-organizations', 'admin-frameworks', 'admin-users']:
+            level = '❌'
+        elif p == 'select-frameworks':
+            if 'manage_frameworks' in permissions or 'frameworks:full' in permissions:
+                level = 'Full'
+        else:
+            for perm in permissions:
+                if perm.startswith(f'{p}:'):
+                    suffix = perm.split(':', 1)[1]
+                    level = LEVEL_MAP.get(suffix, suffix.capitalize())
+                    break
+        page_levels[p] = level
+
+    accessible_pages = [p for p, l in page_levels.items() if l != '❌']
+    return {
+        "accessible_pages": accessible_pages,
+        "page_access_levels": page_levels
+    }
+
+
 def get_user_effective_permissions(user: User, db: Session) -> Set[str]:
     """
     Returns the set of all permission names granted to the user through their roles in the database.
-    SUPER_ADMIN role grants all permissions.
+    SUPER_ADMIN in organization 1 grants all permissions.
     """
     if not user:
         return set()
 
-    # Query roles assigned to this user from user_roles -> roles
-    user_role_records = (
-        db.query(Role)
-        .join(UserRole, UserRole.role_id == Role.id)
-        .filter(UserRole.user_id == user.id)
-        .all()
-    )
-    user_role_names = [r.name.lower() for r in user_role_records]
-
-    # Also check user.role column
-    if user.role:
-        user_role_names.append(user.role.lower())
-
-    if "super_admin" in user_role_names or "superadmin" in user_role_names or "admin" in user_role_names:
+    # 1. Super Admin in Org 1 gets full platform permissions
+    if user.organization_id == 1 and user.role and user.role.lower() in ["super_admin", "superadmin", "admin"]:
         all_perms = db.query(Permission.name).all()
         return {p[0] for p in all_perms}
 
-    # Fetch permissions mapped through user_roles -> role_permissions -> permissions
+    # 2. Query permissions for user's active role in user_roles
+    if user.role:
+        active_norm = normalize_role_name(user.role)
+        active_role_perms = (
+            db.query(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .filter(UserRole.user_id == user.id)
+            .filter(Role.organization_id == user.organization_id)
+            .filter(func.lower(Role.name) == active_norm)
+            .all()
+        )
+        if active_role_perms:
+            return {p[0] for p in active_role_perms}
+
+    # 3. Fallback: all assigned roles for this user in their organization
     mapped_perms = (
         db.query(Permission.name)
         .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserRole, UserRole.role_id == RolePermission.role_id)
+        .join(Role, Role.id == RolePermission.role_id)
+        .join(UserRole, UserRole.role_id == Role.id)
         .filter(UserRole.user_id == user.id)
+        .filter(Role.organization_id == user.organization_id)
         .all()
     )
 
     permissions_set = {p[0] for p in mapped_perms}
 
-    # Fallback to direct user.role mapping from matrix
+    # 4. Fallback to direct user.role mapping from matrix if database mapping not yet initialized
     if not permissions_set and user.role:
         norm = normalize_role_name(user.role)
         permissions_set = set(ROLE_PERMISSION_MATRIX.get(norm, []))

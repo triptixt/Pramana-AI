@@ -1,0 +1,40 @@
+# Environment & Local Configuration
+.env
+.env.*
+*.env
+*.local.env
+pramana-backend-local.env
+pramana-frontend-local.env
+
+# Test Credentials & Secrets
+test_credentials.local.json
+*.local.json
+test_credentials*.json
+
+# Scratch and Temporary files
+scratch/
+*.scratch.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+env/
+venv/
+ENV/
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+
+# Database files
+*.db
+*.sqlite3
+
+# Uploads and Framework PDFs
+Framewrks/

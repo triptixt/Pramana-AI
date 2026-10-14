@@ -46,7 +46,8 @@ class User(Base):
 
     role = Column(
         String,
-        nullable=True,
+        nullable=False,
+        default="executive",
         index=True
     )
 

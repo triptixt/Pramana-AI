@@ -2,10 +2,10 @@
 
 import React from 'react';
 import { useApp } from '../../lib/context';
-import { Shield, Check, ArrowRight, Lock, UserCheck } from 'lucide-react';
+import { Shield, Check, ArrowRight, Lock, UserCheck, LogOut, Loader2 } from 'lucide-react';
 
 export const PublicNavbar: React.FC = () => {
-  const { setIsAuthModalOpen, setAuthModalMode, isAuthenticated, logout } = useApp();
+  const { setIsAuthModalOpen, setAuthModalMode, isAuthenticated, logout, isLoggingOut } = useApp();
 
   return (
     <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
@@ -52,10 +52,16 @@ export const PublicNavbar: React.FC = () => {
           ) : (
             <div className="flex items-center gap-3">
               <button
-                onClick={logout}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                onClick={() => logout()}
+                disabled={isLoggingOut}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60 cursor-pointer"
               >
-                Sign Out
+                {isLoggingOut ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                ) : (
+                  <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                )}
+                <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span>
               </button>
             </div>
           )}

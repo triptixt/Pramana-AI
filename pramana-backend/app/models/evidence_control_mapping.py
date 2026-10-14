@@ -26,6 +26,7 @@ class EvidenceControlMapping(Base):
     mapping_type = Column(String, nullable=False, default="manual") # manual, ai_suggested
 
     confidence_score = Column(Float, nullable=True)
+    coverage_score = Column(Float, nullable=True)
 
     mapping_status = Column(String, nullable=False, default="pending") # pending, approved, rejected
 

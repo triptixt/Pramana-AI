@@ -30,11 +30,20 @@ class GapAnalysis(Base):
         default="open"
     )
 
+    audit_id = Column(
+        Integer,
+        ForeignKey("audits.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     severity = Column(
         String,
         nullable=False,
         default="medium"
     )
+
+    severity_reason = Column(Text, nullable=True)
 
     findings = Column(Text, nullable=True)
 
@@ -60,3 +69,4 @@ class GapAnalysis(Base):
     # Relationships
     organization = relationship("Organization", back_populates="gap_analyses")
     control = relationship("Control", back_populates="gap_analyses")
+    audit = relationship("Audit", back_populates="gap_analyses")

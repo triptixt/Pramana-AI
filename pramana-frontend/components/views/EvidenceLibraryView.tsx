@@ -246,7 +246,7 @@ export const EvidenceLibraryView: React.FC = () => {
                           </StatusBadge>
                         ) : (
                           <StatusBadge type="ai_suggestion" size="sm">
-                            AI ({item.aiConfidence}%)
+                            {item.aiConfidence != null ? `AI (${item.aiConfidence}%)` : 'AI (Not available)'}
                           </StatusBadge>
                         )}
                       </div>

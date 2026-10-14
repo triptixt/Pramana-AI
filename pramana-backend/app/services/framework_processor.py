@@ -408,12 +408,14 @@ def parse_controls_from_text(raw_text: str, framework_name: str) -> List[Dict[st
                                 if "relationships" in c and isinstance(c["relationships"], list):
                                     for r in c["relationships"]:
                                         if isinstance(r, dict) and r.get("target_control_code"):
+                                            raw_r_conf = r.get("confidence")
+                                            r_conf = float(raw_r_conf) if raw_r_conf is not None and isinstance(raw_r_conf, (int, float)) and 0.0 <= raw_r_conf <= 1.0 else None
                                             raw_rels.append({
                                                 "source_code": str(c["control_code"]).strip(),
                                                 "target_code": str(r["target_control_code"]).strip(),
                                                 "relationship_type": normalize_rel_type(str(r.get("relationship_type", "related_to"))),
                                                 "source_reference": str(r.get("evidence") or "LLM extracted cross-reference"),
-                                                "confidence": 0.95
+                                                "confidence": r_conf
                                             })
                                 extracted_from_llm.append({
                                     "control_code": str(c["control_code"]).strip(),

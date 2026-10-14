@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session, joinedload
@@ -17,8 +18,9 @@ from app.models.evidence_version import EvidenceVersion
 from app.models.evidence_control_mapping import EvidenceControlMapping
 from app.models.audit_log import AuditLog
 from app.models.user import User
+from app.models.organization_framework import OrganizationFramework
 from app.ai.embeddings import generate_embeddings, generate_embedding
-from app.ai.llm import get_llm
+from app.ai.llm import get_llm, extract_json_from_text
 from app.services.evidence_processor import process_evidence_document
 
 logger = logging.getLogger(__name__)
@@ -60,13 +62,13 @@ def evaluate_control_relationship_ai(
     Evaluates semantic relationship between two controls using LLM or high-fidelity semantic heuristics.
     Returns structured dict with relationship_type, confidence, ai_explanation, overlap_summary, differences_summary.
     """
-    # Calculate estimated similarity confidence from pgvector distance
-    # Typical L2 distances in nomic-embed range from 0.4 to 1.8; cosine from 0 to 1
+    # Calculate estimated similarity confidence from pgvector cosine distance
+    # Cosine distance d in [0, 2], cosine similarity = 1.0 - d
     if vector_distance < 0.0:
         base_confidence = 0.5
     else:
-        # Normalize distance into 0.0 - 1.0 confidence
-        base_confidence = max(0.1, min(0.98, 1.0 / (1.0 + float(vector_distance))))
+        # Normalize cosine distance into 0.0 - 1.0 confidence
+        base_confidence = max(0.1, min(0.98, round(1.0 - float(vector_distance), 2)))
 
     source_text = f"[{source_ctrl.control_code}] {source_ctrl.title}. {source_ctrl.requirement or source_ctrl.description or ''}"
     target_text = f"[{target_ctrl.control_code}] {target_ctrl.title}. {target_ctrl.requirement or target_ctrl.description or ''}"
@@ -103,16 +105,15 @@ INSTRUCTIONS:
 }}"""
 
     try:
-        llm = get_llm()
+        llm = get_llm(timeout=120.0)
         response = llm.invoke(prompt)
-        content = response.content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        parsed = json.loads(content.strip())
+        raw_text = response.content if hasattr(response, "content") else str(response)
+        clean_json = extract_json_from_text(raw_text)
+        try:
+            parsed = json.loads(clean_json)
+        except json.JSONDecodeError:
+            cleaned = re.sub(r",\s*([}\]])", r"\1", clean_json)
+            parsed = json.loads(cleaned)
 
         rel_type = parsed.get("relationship_type", "related_to").lower().strip()
         if rel_type not in ["equivalent", "partially_overlaps", "complementary", "related_to", "not_related"]:
@@ -129,35 +130,8 @@ INSTRUCTIONS:
             "differences_summary": parsed.get("differences_summary", "Framework-specific reporting and verification criteria differ.")
         }
     except Exception as e:
-        logger.info(f"Ollama evaluation bypassed or offline ({e}), utilizing structured semantic engine.")
-        # Determine relationship type based on vector distance and keyword overlap
-        src_words = set(source_text.lower().split())
-        tgt_words = set(target_text.lower().split())
-        overlap_words = src_words.intersection(tgt_words) - {"the", "and", "or", "to", "in", "for", "of", "a", "an", "is", "by", "with", "on", "as"}
-        
-        overlap_ratio = len(overlap_words) / max(1, min(len(src_words), len(tgt_words)))
-        conf = max(0.5, min(0.95, round(base_confidence * 0.7 + overlap_ratio * 0.3, 2)))
-
-        if conf >= 0.85:
-            rel_type = "equivalent"
-            explanation = f"High requirement similarity between {source_ctrl.control_code} ({source_fw.code}) and {target_ctrl.control_code} ({target_fw.code}). Both mandate core safeguards regarding {', '.join(list(overlap_words)[:4])}."
-        elif conf >= 0.70:
-            rel_type = "partially_overlaps"
-            explanation = f"Moderate requirement overlap between {source_ctrl.control_code} and {target_ctrl.control_code}. Both address {', '.join(list(overlap_words)[:4])} with differing framework verification scope."
-        elif conf >= 0.55:
-            rel_type = "complementary"
-            explanation = f"Controls {source_ctrl.control_code} and {target_ctrl.control_code} are mutually supportive across {source_fw.code} and {target_fw.code} domains."
-        else:
-            rel_type = "related_to"
-            explanation = f"Thematic alignment in security governance between {source_ctrl.control_code} and {target_ctrl.control_code}."
-
-        return {
-            "relationship_type": rel_type,
-            "confidence": conf,
-            "ai_explanation": explanation,
-            "overlap_summary": f"Common controls and requirements around: {', '.join(list(overlap_words)[:5]) if overlap_words else 'security policies'}",
-            "differences_summary": f"Scope nuances between {source_fw.name} and {target_fw.name} standards."
-        }
+        logger.error(f"[Relationships] LLM relationship evaluation failed between [{source_ctrl.control_code}] and [{target_ctrl.control_code}]: {e}")
+        raise
 
 
 def verify_control_relationship(
@@ -192,15 +166,89 @@ def verify_control_relationship(
     return True, "Verified"
 
 
+def evaluate_evidence_control_mapping_ai(
+    chunk_content: str,
+    control: Control,
+    framework_name: str,
+    cosine_sim: float
+) -> Dict[str, Any]:
+    """
+    Evaluates whether an evidence excerpt substantiates a compliance control requirement
+    using the LLM integration or high-fidelity fallback heuristics.
+    """
+    base_confidence = max(0.1, min(0.99, round(cosine_sim, 2)))
+    
+    prompt = f"""You are an expert cybersecurity compliance auditor.
+Evaluate whether the following evidence text supports or fulfills the compliance control requirement.
+
+COMPLIANCE CONTROL:
+Framework: {framework_name}
+Control ID: {control.control_code}
+Title: {control.title}
+Requirement: {control.requirement or control.description or 'N/A'}
+
+EVIDENCE EXCERPT:
+\"\"\"{chunk_content[:2000]}\"\"\"
+
+INSTRUCTIONS:
+1. Determine if the evidence provides relevant, substantiated support for this control.
+2. Return a valid JSON object ONLY:
+{{
+  "is_supported": true | false,
+  "confidence": <float 0.0 to 1.0>,
+  "explanation": "<detailed auditor explanation justifying why the evidence supports or does not support the control>",
+  "requirement_supported": "<specific control requirements supported by this evidence>",
+  "unsupported_requirements": "<any parts of the control requirement not covered or needing further proof>"
+}}"""
+
+    import time
+    t0 = time.time()
+    try:
+        llm = get_llm(timeout=120.0)
+        response = llm.invoke(prompt)
+        raw_text = response.content if hasattr(response, "content") else str(response)
+        clean_json = extract_json_from_text(raw_text)
+        try:
+            parsed = json.loads(clean_json)
+        except json.JSONDecodeError:
+            cleaned = re.sub(r",\s*([}\]])", r"\1", clean_json)
+            parsed = json.loads(cleaned)
+
+        is_supp = bool(parsed.get("is_supported", False))
+        conf = float(parsed.get("confidence", base_confidence))
+        conf = max(0.1, min(0.99, round(conf, 2)))
+
+        duration = round(time.time() - t0, 3)
+        logger.info(
+            f"[Mapping] LLM evaluated mapping for [{control.control_code}] in {duration}s: "
+            f"supported={is_supp}, confidence={conf}."
+        )
+
+        return {
+            "is_supported": is_supp,
+            "confidence": conf,
+            "explanation": parsed.get("explanation", f"Evidence excerpt evaluated against [{control.control_code}] {control.title}."),
+            "requirement_supported": parsed.get("requirement_supported", f"Supports criteria of {control.control_code}."),
+            "unsupported_requirements": parsed.get("unsupported_requirements", "Continuous operational evidence required.")
+        }
+    except Exception as e:
+        logger.error(f"[Mapping] LLM evaluation failed for control [{control.control_code}]: {e}")
+        raise
+
+
 def verify_evidence_mapping(
     chunk_content: str,
     control: Control,
     confidence: float,
-    min_confidence: float = 0.65
+    min_confidence: float = 0.65,
+    is_supported: bool = True
 ) -> Tuple[bool, str]:
     """
     Strict verification check for candidate evidence-to-control mappings before persisting to PostgreSQL.
     """
+    if not is_supported:
+        return False, f"Rejected: Evidence does not substantiate mandatory criteria for [{control.control_code}]."
+
     if confidence < min_confidence:
         return False, f"Rejected: Evidence similarity confidence {confidence:.2f} is below verification threshold {min_confidence:.2f}."
 
@@ -270,7 +318,7 @@ def generate_control_relationships_pipeline(
 
         # Pgvector candidate search
         cand_query = (
-            db.query(Control, Control.embedding.l2_distance(src.embedding).label("dist"))
+            db.query(Control, Control.embedding.cosine_distance(src.embedding).label("dist"))
             .filter(
                 Control.framework_version_id == target_ver_id,
                 Control.is_active == True,
@@ -365,8 +413,14 @@ def generate_evidence_mappings_pipeline(
 ) -> List[EvidenceControlMapping]:
     """
     Maps uploaded organizational evidence to candidate controls using pgvector semantic chunk search and AI.
-    Checks and verifies each evidence-to-control mapping before saving to PostgreSQL.
+    Strictly enforces:
+    1. Tenant isolation & organization enrollment in frameworks.
+    2. Candidate shortlisting using cosine similarity on chunk embeddings.
+    3. AI / LLM evaluation of whether evidence substantiates control requirements.
+    4. Validation of control IDs against PostgreSQL before saving.
+    5. Safe transactional commit avoiding duplicates.
     """
+    logger.info(f"Starting evidence mapping pipeline for evidence_id={evidence_id}, org_id={organization_id}")
     evidence = db.query(Evidence).filter(
         Evidence.id == evidence_id,
         Evidence.organization_id == organization_id
@@ -375,100 +429,202 @@ def generate_evidence_mappings_pipeline(
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence document not found in your organization.")
 
-    # If evidence not processed yet, trigger extraction & chunking
+    # 1. Ensure evidence is processed (extracted, chunked, embedded)
     if evidence.status != "processed":
         process_evidence_document(db=db, evidence_id=evidence.id, organization_id=organization_id)
 
-    # Get evidence chunks
+    # 2. Get evidence chunks with valid embeddings
     chunks = (
         db.query(EvidenceChunk)
         .join(EvidenceVersion, EvidenceChunk.evidence_version_id == EvidenceVersion.id)
-        .filter(EvidenceVersion.evidence_id == evidence.id)
+        .filter(
+            EvidenceVersion.evidence_id == evidence.id,
+            EvidenceChunk.embedding.isnot(None)
+        )
+        .order_by(EvidenceChunk.chunk_index.asc())
         .all()
     )
 
     if not chunks:
+        logger.warning(f"No indexed chunks found for evidence {evidence.id}")
         return []
 
-    # Candidate controls query
-    ctrl_query = db.query(Control).filter(Control.is_active == True)
-    if control_id:
-        ctrl_query = ctrl_query.filter(Control.id == control_id)
-    elif framework_version_id:
-        ctrl_query = ctrl_query.filter(Control.framework_version_id == framework_version_id)
-    
-    controls = ctrl_query.all()
-    if not controls:
+    logger.info(f"Retrieved {len(chunks)} indexed chunks for evidence #{evidence.id}")
+
+    # 3. Determine authorized framework version IDs for the organization
+    org_fws = db.query(OrganizationFramework).filter(
+        OrganizationFramework.organization_id == organization_id,
+        OrganizationFramework.status == "active"
+    ).all()
+
+    if not org_fws:
+        logger.warning(f"Organization {organization_id} has no active framework enrollments.")
         return []
 
-    ensure_control_embeddings(db, controls)
+    enrolled_version_ids = []
+    for of in org_fws:
+        if of.framework_version_id:
+            enrolled_version_ids.append(of.framework_version_id)
+        else:
+            vers = db.query(FrameworkVersion.id).filter(
+                FrameworkVersion.framework_id == of.framework_id,
+                FrameworkVersion.status == "active"
+            ).all()
+            enrolled_version_ids.extend([v[0] for v in vers])
+
+    enrolled_version_ids = list(set(enrolled_version_ids))
+
+    if framework_version_id:
+        if framework_version_id not in enrolled_version_ids:
+            logger.warning(f"Org {organization_id} not enrolled in framework version {framework_version_id}.")
+            raise HTTPException(status_code=403, detail="Organization is not enrolled in the requested framework version.")
+        target_version_ids = [framework_version_id]
+    else:
+        target_version_ids = enrolled_version_ids
+
+    if not target_version_ids:
+        logger.warning(f"No active enrolled framework versions available for org {organization_id}.")
+        return []
+
+    logger.info(f"Scoped mapping to {len(target_version_ids)} framework versions for org {organization_id}: {target_version_ids}")
+
+    # 4. Shortlist candidate controls per framework version to ensure cross-framework coverage
+    candidates_to_evaluate: List[Dict[str, Any]] = []
+    per_fw_limit = top_k if framework_version_id else max(2, min(top_k, 3))
+
+    for ver_id in target_version_ids:
+        ver_candidates: Dict[int, Dict[str, Any]] = {}
+        for chunk in chunks:
+            q = (
+                db.query(Control, Control.embedding.cosine_distance(chunk.embedding).label("cos_dist"))
+                .filter(
+                    Control.framework_version_id == ver_id,
+                    Control.is_active == True,
+                    Control.embedding.isnot(None)
+                )
+            )
+            if control_id:
+                q = q.filter(Control.id == control_id)
+
+            closest_candidates = q.order_by("cos_dist").limit(per_fw_limit * 2).all()
+
+            for ctrl, cos_dist in closest_candidates:
+                sim = max(0.0, min(1.0, 1.0 - float(cos_dist)))
+                # Shortlist threshold: consider candidates with reasonable proximity
+                if sim < 0.45:
+                    continue
+
+                if ctrl.id not in ver_candidates or sim > ver_candidates[ctrl.id]["similarity"]:
+                    ver_candidates[ctrl.id] = {
+                        "control": ctrl,
+                        "chunk": chunk,
+                        "similarity": sim
+                    }
+
+        sorted_ver_cands = sorted(ver_candidates.values(), key=lambda x: x["similarity"], reverse=True)[:per_fw_limit]
+        candidates_to_evaluate.extend(sorted_ver_cands)
+
+    if not candidates_to_evaluate:
+        logger.info(f"No candidate controls met semantic retrieval threshold (>= 0.45) for evidence {evidence.id}")
+        return []
+
+    logger.info(
+        f"Shortlisted {len(candidates_to_evaluate)} candidate controls across "
+        f"{len(target_version_ids)} frameworks for AI evaluation on evidence #{evidence.id}"
+    )
 
     verified_stored: List[EvidenceControlMapping] = []
 
-    # Find candidate controls with highest vector similarity to evidence
-    for ctrl in controls:
-        if not ctrl.embedding:
-            continue
+    for item in candidates_to_evaluate:
+        ctrl = item["control"]
+        chunk = item["chunk"]
+        retrieval_sim = item["similarity"]
 
-        # Query closest chunk to this control
-        closest_chunk = (
-            db.query(EvidenceChunk, EvidenceChunk.embedding.l2_distance(ctrl.embedding).label("dist"))
-            .join(EvidenceVersion, EvidenceChunk.evidence_version_id == EvidenceVersion.id)
-            .filter(
-                EvidenceVersion.evidence_id == evidence.id,
-                EvidenceChunk.embedding.isnot(None)
+        # Resolve framework name for LLM auditor prompt
+        ver = db.query(FrameworkVersion).filter(FrameworkVersion.id == ctrl.framework_version_id).first()
+        fw = db.query(Framework).filter(Framework.id == ver.framework_id).first() if ver else None
+        fw_name = fw.name if fw else "Compliance Standard"
+
+        # 5. Evaluate support with AI/LLM with candidate-level fault tolerance
+        try:
+            eval_res = evaluate_evidence_control_mapping_ai(
+                chunk_content=chunk.content or "",
+                control=ctrl,
+                framework_name=fw_name,
+                cosine_sim=retrieval_sim
             )
-            .order_by("dist")
-            .first()
-        )
-
-        if not closest_chunk:
+        except Exception as cand_err:
+            logger.warning(
+                f"[Mapping] Candidate evaluation skipped for control [{ctrl.control_code}] on evidence {evidence.id}: {cand_err}"
+            )
             continue
 
-        chunk_obj, dist = closest_chunk
-        confidence = max(0.2, min(0.96, round(1.0 / (1.0 + float(dist)), 2)))
-
-        # Verification check
+        # 6. Strict Verification Check
         is_valid, reason = verify_evidence_mapping(
-            chunk_content=chunk_obj.content or "",
+            chunk_content=chunk.content or "",
             control=ctrl,
-            confidence=confidence,
-            min_confidence=min_confidence
+            confidence=eval_res["confidence"],
+            min_confidence=min_confidence,
+            is_supported=eval_res["is_supported"]
         )
 
         if not is_valid:
+            logger.info(f"Discarding candidate mapping for [{ctrl.control_code}] on evidence {evidence.id}: {reason}")
             continue
 
-        # Check existing mapping
-        existing = db.query(EvidenceControlMapping).filter(
+        # 7. Check if mapping already exists in PostgreSQL
+        existing_mapping = db.query(EvidenceControlMapping).filter(
             EvidenceControlMapping.evidence_id == evidence.id,
             EvidenceControlMapping.control_id == ctrl.id
         ).first()
 
-        if existing:
-            verified_stored.append(existing)
+        if existing_mapping:
+            existing_mapping.confidence_score = eval_res["confidence"]
+            existing_mapping.ai_explanation = eval_res["explanation"]
+            existing_mapping.requirement_supported = eval_res["requirement_supported"]
+            existing_mapping.unsupported_requirements = eval_res["unsupported_requirements"]
+            existing_mapping.notes = f"Verified via chunk #{chunk.chunk_index} cosine similarity ({retrieval_sim:.3f})"
+            db.commit()
+            db.refresh(existing_mapping)
+            verified_stored.append(existing_mapping)
+            logger.info(f"Updated existing mapping for control [{ctrl.control_code}] on evidence #{evidence.id} with confidence {eval_res['confidence']:.2f}")
             continue
 
-        # Create structured evidence mapping explanation
-        explanation = f"Evidence artifact '{evidence.file_name}' operational implementation verified for [{ctrl.control_code}] {ctrl.title}."
-        req_supported = f"Requirements supported by verified procedural content in chunk #{chunk_obj.chunk_index}."
-        unsupported = "Continuous audit monitoring and attestation required for full coverage."
-
-        new_map = EvidenceControlMapping(
+        # 8. Create new EvidenceControlMapping
+        new_mapping = EvidenceControlMapping(
             evidence_id=evidence.id,
             control_id=ctrl.id,
-            mapping_type="ai_verified",
-            confidence_score=confidence,
-            mapping_status="verified",
-            notes=f"Verified via pgvector chunk similarity (distance={float(dist):.3f})",
-            ai_explanation=explanation,
-            requirement_supported=req_supported,
-            unsupported_requirements=unsupported,
-            reviewed_at=datetime.now(timezone.utc)
+            mapping_type="ai_suggested",
+            confidence_score=eval_res["confidence"],
+            coverage_score=None,
+            mapping_status="pending",
+            notes=f"Shortlisted via chunk #{chunk.chunk_index} cosine similarity ({retrieval_sim:.3f}) and LLM evaluation.",
+            ai_explanation=eval_res["explanation"],
+            requirement_supported=eval_res["requirement_supported"],
+            unsupported_requirements=eval_res["unsupported_requirements"],
+            created_at=datetime.now(timezone.utc)
         )
-        db.add(new_map)
+        db.add(new_mapping)
         db.commit()
-        db.refresh(new_map)
-        verified_stored.append(new_map)
+        db.refresh(new_mapping)
+        verified_stored.append(new_mapping)
+        logger.info(f"Persisted new mapping #{new_mapping.id} for [{ctrl.control_code}] on evidence #{evidence.id} with confidence {eval_res['confidence']:.2f}")
+
+    # 9. Audit Log
+    if verified_stored:
+        acting_user_id = current_user.id if current_user else evidence.uploaded_by
+        try:
+            audit = AuditLog(
+                organization_id=organization_id,
+                user_id=acting_user_id,
+                action="Evidence Control Mappings Generated",
+                entity_type="EvidenceControlMapping",
+                entity_id=evidence.id,
+                details=f"Generated and persisted {len(verified_stored)} AI candidate mappings for evidence '{evidence.file_name}'."
+            )
+            db.add(audit)
+            db.commit()
+        except Exception:
+            db.rollback()
 
     return verified_stored

@@ -13,6 +13,7 @@ from app.models.framework_version import FrameworkVersion
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.core.dependencies import get_current_user
+from app.services.rbac_service import get_user_effective_permissions
 from app.schemas.control_mapping import (
     EvidenceControlMappingCreate,
     EvidenceControlMappingResponse,
@@ -68,6 +69,7 @@ def enrich_evidence_mapping(mapping: EvidenceControlMapping, db: Session) -> dic
         "control_id": mapping.control_id,
         "mapping_type": mapping.mapping_type,
         "confidence_score": mapping.confidence_score,
+        "coverage_score": mapping.coverage_score,
         "mapping_status": mapping.mapping_status,
         "notes": mapping.notes,
         "ai_explanation": mapping.ai_explanation,
@@ -127,9 +129,9 @@ def generate_evidence_mappings(
     """
     AI Evidence-to-Control mapping using pgvector semantic chunk similarity.
     """
-    allowed_roles = {"super_admin", "ciso", "grc", "evidence_contributor", "internal_auditor", "external_auditor"}
-    if current_user.role not in allowed_roles:
-        raise HTTPException(status_code=403, detail="Permission denied to map evidence.")
+    perms = get_user_effective_permissions(current_user, db)
+    if "run_ai_analysis" not in perms and "upload_evidence" not in perms and "manage_controls" not in perms:
+        raise HTTPException(status_code=403, detail="Permission denied to generate evidence mappings.")
 
     results = generate_evidence_mappings_pipeline(
         db=db,
@@ -153,10 +155,14 @@ def review_evidence_mapping(
 ):
     """
     Auditor review and approval of evidence-to-control mappings.
+    Enforces 'review_ai_results' or 'manage_audits' permission from PostgreSQL.
     """
-    allowed_roles = {"super_admin", "ciso", "grc", "internal_auditor", "external_auditor"}
-    if current_user.role not in allowed_roles:
-        raise HTTPException(status_code=403, detail="Permission denied to review evidence mappings.")
+    perms = get_user_effective_permissions(current_user, db)
+    if "review_ai_results" not in perms and "manage_audits" not in perms:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied to review evidence mappings. 'review_ai_results' required."
+        )
 
     mapping = (
         db.query(EvidenceControlMapping)
@@ -241,7 +247,8 @@ def create_mapping(
         evidence_id=mapping_data.evidence_id,
         control_id=mapping_data.control_id,
         mapping_type=mapping_data.mapping_type or "manual",
-        confidence_score=mapping_data.confidence_score or 1.0,
+        confidence_score=mapping_data.confidence_score,
+        coverage_score=mapping_data.coverage_score,
         mapping_status=mapping_data.mapping_status or "approved",
         notes=mapping_data.notes or "Manually mapped by user",
         ai_explanation=mapping_data.ai_explanation or f"Manual mapping assigned to control {control.control_code}.",

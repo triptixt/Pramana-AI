@@ -131,7 +131,7 @@ export const ControlDetailDrawer: React.FC = () => {
                   ? 'bg-emerald-100 text-emerald-800'
                   : 'bg-amber-100 text-amber-800'
               }`}>
-                {evalResult.evaluation?.status || 'Assessed'} (Confidence: {Math.round((evalResult.evaluation?.confidence || 0) * 100)}%)
+                {evalResult.evaluation?.status || 'Assessed'} (Confidence: {evalResult.evaluation?.confidence != null ? `${Math.round(evalResult.evaluation.confidence * 100)}%` : 'Not available'})
               </span>
             </div>
 

@@ -106,6 +106,15 @@ export const StatusBadge: React.FC<BadgeProps> = ({
     );
   }
 
+  if (severity === 'unassessed') {
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-300 ${sizeClasses} ${className}`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+        Unassessed
+      </span>
+    );
+  }
+
   return (
     <span className={`inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-800 border border-slate-200 ${sizeClasses} ${className}`}>
       {children}

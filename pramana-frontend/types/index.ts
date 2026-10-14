@@ -42,6 +42,14 @@ export interface Organization {
   created_at?: string;
 }
 
+export interface AssignedRole {
+  id: number;
+  name: string;
+  title: string;
+  description?: string;
+  is_active: boolean;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -53,6 +61,13 @@ export interface UserProfile {
   organizationName: string;
   lastActive: string;
   status: 'active' | 'pending' | 'inactive';
+  assignedRoles?: AssignedRole[];
+  canSwitchRole?: boolean;
+  canSwitchOrganization?: boolean;
+  isSuperAdmin?: boolean;
+  permissions?: string[];
+  accessiblePages?: ActiveView[];
+  pageAccessLevels?: Record<string, PageAccessLevel>;
 }
 
 export type FrameworkId = 'all' | 'iso-27001' | 'soc-2' | 'pci-dss' | 'dpdp' | 'nist-csf' | (string & {});
@@ -108,7 +123,8 @@ export interface EvidenceItem {
   frameworks: FrameworkId[];
   mappedControlIds: string[];
   processingStatus: ProcessingStatus;
-  aiConfidence: number;
+  aiConfidence: number | null;
+  coverageScore?: number | null;
   aiReasoning: string;
   aiModelInfo?: {
     model: string;
@@ -147,7 +163,8 @@ export interface ControlItem {
   coverageState: CoverageState;
   mappedEvidenceCount: number;
   evidenceIds: string[];
-  aiConfidence: number;
+  aiConfidence: number | null;
+  coverageScore?: number | null;
   aiExplanation: string;
   reviewStatus: 'Approved' | 'Pending Review' | 'Needs Evidence' | 'Rejected';
   auditorDecision?: 'approved' | 'rejected' | 'requested_evidence';
@@ -157,7 +174,7 @@ export interface ControlItem {
   gapsCount: number;
 }
 
-export type GapSeverity = 'critical' | 'high' | 'medium' | 'low';
+export type GapSeverity = 'critical' | 'high' | 'medium' | 'low' | 'unassessed';
 export type GapStatus = 'open' | 'in_progress' | 'evidence_requested' | 'resolved' | 'rejected' | 'closed' | 'in_remediation' | 'needs_verification';
 
 export interface GapItem {
@@ -167,6 +184,7 @@ export interface GapItem {
   framework: FrameworkId;
   controlId: string;
   severity: GapSeverity;
+  severityReason?: string;
   owner: string;
   dueDate: string;
   status: GapStatus;
@@ -188,7 +206,8 @@ export interface ReviewQueueItem {
   framework: FrameworkId;
   controlId: string;
   controlTitle: string;
-  aiConfidence: number;
+  aiConfidence: number | null;
+  coverageScore?: number | null;
   aiReasoning: string;
   evidenceExcerpt: string;
   citations?: EvidenceCitation[];
@@ -302,6 +321,7 @@ export interface EvidenceControlMappingItem {
   control_id: number;
   mapping_type: string;
   confidence_score: number | null;
+  coverage_score?: number | null;
   mapping_status: 'pending' | 'approved' | 'rejected' | string;
   notes: string | null;
   ai_explanation?: string;

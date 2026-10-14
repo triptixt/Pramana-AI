@@ -27,4 +27,9 @@ class ResetPasswordRequest(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
-    token_type: str
+    token_type: str
+
+
+class SwitchRoleRequest(BaseModel):
+    role: str
+

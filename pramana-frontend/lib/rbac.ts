@@ -1,4 +1,4 @@
-import { Role, ActiveView, PageAccessLevel } from '../types';
+import { Role, ActiveView, PageAccessLevel, UserProfile } from '../types';
 
 export interface RoleConfig {
   id: Role;
@@ -55,7 +55,7 @@ export const ROLES_CONFIG: Record<Role, RoleConfig> = {
     name: 'Internal Auditor',
     title: 'Internal Auditor',
     department: 'Internal Audit & Risk Assurance',
-    description: 'Independent Assurance — Audits controls, performs independent verification, reviews queue items, and monitors complete audit trails.',
+    description: 'Independent Assurance — Audits controls, performs independent verification, read-only inspection of review queue items, and monitors complete audit trails.',
     badgeBg: 'bg-blue-100',
     badgeText: 'text-blue-800',
     badgeBorder: 'border-blue-200',
@@ -91,7 +91,7 @@ export const ROLES_CONFIG: Record<Role, RoleConfig> = {
     name: 'External Auditor',
     title: 'External Auditor',
     department: 'Independent CPA / Audit Firm',
-    description: 'External Attestation — Evaluates scoped evidence, attests control design and operational effectiveness, signs off on audit review items.',
+    description: 'External Attestation — Evaluates scoped evidence, signs off on audit review items with full read & write review access, and read-only inspection of gap analysis.',
     badgeBg: 'bg-sky-100',
     badgeText: 'text-sky-800',
     badgeBorder: 'border-sky-200',
@@ -189,17 +189,17 @@ export const RBAC_MATRIX: Record<ActiveView, Record<Role, PageAccessLevel>> = {
     internal_auditor: 'View/Review',
     control_owner: 'Assigned gaps',
     evidence_contributor: 'Assigned actions',
-    external_auditor: 'Assigned only',
+    external_auditor: 'View',
     executive: 'Summary',
   },
   'review-queue': {
     super_admin: 'Full',
     ciso: 'Full',
     grc: 'Full',
-    internal_auditor: 'Full',
+    internal_auditor: 'View',
     control_owner: 'Assigned items',
     evidence_contributor: '❌',
-    external_auditor: 'Assigned items',
+    external_auditor: 'Full',
     executive: '❌',
   },
   'audit-trail': {
@@ -303,13 +303,54 @@ export function hasPageAccess(role: string, page: ActiveView): boolean {
 }
 
 /**
- * If the current active view is inaccessible for this role, return their primary allowed view
+ * Resolves whether a user profile has access to a given page based on real database access resolution.
+ * If accessiblePages is provided by PostgreSQL /auth/me, it uses that as the authoritative source of truth.
+ * Otherwise falls back to matrix checking for the role.
  */
-export function getRoleDefaultPage(role: string): ActiveView {
+export function canAccessPage(userOrRole: UserProfile | string | undefined, page: ActiveView): boolean {
+  if (!userOrRole) return false;
+  if (typeof userOrRole === 'string') {
+    return hasPageAccess(userOrRole, page);
+  }
+  if (userOrRole.accessiblePages && Array.isArray(userOrRole.accessiblePages)) {
+    return userOrRole.accessiblePages.includes(page);
+  }
+  return hasPageAccess(userOrRole.role, page);
+}
+
+/**
+ * Returns the resolved access level for a user on a given page from the database access matrix.
+ */
+export function getPageAccessLevel(userOrRole: UserProfile | string | undefined, page: ActiveView): PageAccessLevel {
+  if (!userOrRole) return '❌';
+  if (typeof userOrRole === 'string') {
+    return getPageAccess(userOrRole, page);
+  }
+  if (userOrRole.pageAccessLevels && userOrRole.pageAccessLevels[page]) {
+    return userOrRole.pageAccessLevels[page];
+  }
+  return getPageAccess(userOrRole.role, page);
+}
+
+/**
+ * If the current active view is inaccessible for this role/user, return their primary allowed view
+ */
+export function getRoleDefaultPage(userOrRole: UserProfile | string): ActiveView {
+  const role = typeof userOrRole === 'string' ? userOrRole : userOrRole.role;
   const normRole = normalizeRole(role);
   if (normRole === 'super_admin') {
     return 'super-admin';
   }
+
+  // If user profile has database-resolved accessible pages, use that
+  if (typeof userOrRole !== 'string' && userOrRole.accessiblePages && userOrRole.accessiblePages.length > 0) {
+    const config = ROLES_CONFIG[normRole];
+    if (config && userOrRole.accessiblePages.includes(config.defaultPage)) {
+      return config.defaultPage;
+    }
+    return userOrRole.accessiblePages[0];
+  }
+
   const config = ROLES_CONFIG[normRole];
   if (config && hasPageAccess(normRole, config.defaultPage)) {
     return config.defaultPage;

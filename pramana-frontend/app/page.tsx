@@ -29,7 +29,8 @@ import { FrameworksView } from '../components/views/FrameworksView';
 import { SuperAdminView } from '../components/views/SuperAdminView';
 import { SettingsView } from '../components/views/SettingsView';
 import { AccessRestricted } from '../components/ui/AccessRestricted';
-import { hasPageAccess } from '../lib/rbac';
+import { canAccessPage, hasPageAccess } from '../lib/rbac';
+import { ActiveView } from '../types';
 
 const PAGE_NAMES: Record<string, string> = {
   overview: 'Overview Dashboard',
@@ -49,13 +50,35 @@ const PAGE_NAMES: Record<string, string> = {
 };
 
 function ProtectedMerchantDashboard() {
-  const { activeView, activeUser } = useApp();
+  const { activeView, setActiveView, activeUser } = useApp();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Sync ?view= from URL on load and URL parameter changes
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view') as ActiveView | null;
+      if (viewParam && viewParam !== activeView && PAGE_NAMES[viewParam]) {
+        setActiveView(viewParam);
+      }
+    }
+  }, []);
+
+  // Update URL query parameter when activeView changes
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const currentUrl = new URL(window.location.href);
+      if (currentUrl.searchParams.get('view') !== activeView) {
+        currentUrl.searchParams.set('view', activeView);
+        window.history.replaceState(null, '', currentUrl.toString());
+      }
+    }
+  }, [activeView]);
+
   const renderActiveView = () => {
-    // RBAC Route Guard: Block access if the active role has ❌ for this page
-    if (!hasPageAccess(activeUser.role, activeView)) {
+    // RBAC Route Guard: Block access if the active role does not have permission for this page
+    if (!canAccessPage(activeUser, activeView)) {
       return (
         <AccessRestricted
           pageName={PAGE_NAMES[activeView] || activeView}
@@ -145,7 +168,17 @@ function ProtectedMerchantDashboard() {
 }
 
 function MainRootRouter() {
-  const { isAuthenticated } = useApp();
+  const { isAuthenticated, isAuthLoading } = useApp();
+
+  if (isAuthLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 text-white p-6">
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <h2 className="text-xl font-semibold tracking-tight text-slate-100">Verifying Security & Access Permissions</h2>
+        <p className="text-sm text-slate-400 mt-1">Authenticating session and resolving authorized pages...</p>
+      </div>
+    );
+  }
 
   // If not authenticated -> Show Public Landing Page with Login / Signup
   if (!isAuthenticated) {

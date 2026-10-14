@@ -11,6 +11,7 @@ import {
   User,
   Settings,
   LogOut,
+  Loader2,
   CheckCheck,
   ShieldAlert,
   Sparkles,
@@ -22,6 +23,8 @@ import {
 import {
   ROLES_CONFIG,
   getPageAccess,
+  getPageAccessLevel,
+  canAccessPage,
   hasPageAccess,
   normalizeRole,
 } from '../../lib/rbac';
@@ -40,7 +43,9 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
     currentOrg,
     organizations,
     switchOrganization,
+    switchRole,
     logout,
+    isLoggingOut,
     setIsSearchOpen,
     setIsAIChatOpen,
     notificationsList,
@@ -54,9 +59,9 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
   const [showOrgDropdown, setShowOrgDropdown] = useState(false);
 
   const normRole = normalizeRole(activeUser.role);
-  const isSuperAdmin = activeUser.role === 'super_admin' || normRole === 'super_admin';
+  const isSuperAdmin = activeUser.isSuperAdmin || activeUser.role === 'super_admin' || normRole === 'super_admin';
   const roleConfig = ROLES_CONFIG[normRole] || ROLES_CONFIG['ciso'];
-  const currentAccess = getPageAccess(activeUser.role, activeView);
+  const currentAccess = getPageAccessLevel(activeUser, activeView);
 
   const unreadCount = notificationsList.filter((n) => !n.read).length;
 
@@ -165,7 +170,7 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
                       key={notif.id}
                       onClick={() => {
                         markNotificationRead(notif.id);
-                        if (notif.linkTarget && hasPageAccess(activeUser.role, notif.linkTarget as any)) {
+                        if (notif.linkTarget && canAccessPage(activeUser, notif.linkTarget as any)) {
                           setActiveView(notif.linkTarget as any);
                         }
                         setShowNotifications(false);
@@ -206,43 +211,54 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
           <div className="h-6 w-px bg-slate-200 hidden sm:block" />
         )}
 
-        {/* Merchant Organization Switcher Dropdown (for non-SuperAdmin users) */}
+        {/* Merchant Organization Switcher / Badge */}
         {!isSuperAdmin && activeView !== 'super-admin' && (
-          <div className="relative hidden lg:block">
-            <button
-              onClick={() => setShowOrgDropdown(!showOrgDropdown)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 border border-slate-200 text-xs font-bold text-slate-800 transition-colors"
-            >
-              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
-              <span>{currentOrg.name}</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-            </button>
+          <div className="relative hidden sm:block">
+            {activeUser.canSwitchOrganization && organizations.length > 1 ? (
+              <>
+                <button
+                  onClick={() => setShowOrgDropdown(!showOrgDropdown)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200/70 border border-slate-200 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>{currentOrg.name}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                </button>
 
-            {showOrgDropdown && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 animate-in fade-in slide-in-from-top-2 duration-150">
-                <p className="px-3 py-1.5 text-[10px] font-bold uppercase text-slate-400 border-b border-slate-100">
-                  Organization Vault
-                </p>
-                <div className="py-1 space-y-1">
-                  {organizations.map((org) => (
-                    <button
-                      key={org.id}
-                      onClick={() => {
-                        switchOrganization(org.id);
-                        setShowOrgDropdown(false);
-                      }}
-                      className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors ${currentOrg.id === org.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                        }`}
-                    >
-                      <span>{org.name}</span>
-                      <span className="text-[10px] opacity-75 font-mono">{org.plan}</span>
-                    </button>
-                  ))}
-                </div>
+                {showOrgDropdown && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <p className="px-3 py-1.5 text-[10px] font-bold uppercase text-slate-400 border-b border-slate-100">
+                      Organization Vault
+                    </p>
+                    <div className="py-1 space-y-1">
+                      {organizations.map((org) => (
+                        <button
+                          key={org.id}
+                          onClick={() => {
+                            switchOrganization(org.id);
+                            setShowOrgDropdown(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors ${
+                            currentOrg.id === org.id ? 'bg-indigo-50 text-indigo-700 font-bold' : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <span>{org.name}</span>
+                          <span className="text-[10px] opacity-75 font-mono">{org.plan}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700">
+                <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+                <span>{currentOrg.name}</span>
               </div>
             )}
           </div>
         )}
+
 
         {/* User Profile Avatar & Role Badge */}
         <div className="relative">
@@ -281,8 +297,45 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
                 </div>
               </div>
 
+              {/* Role Switcher (Only shown if user has multiple assigned roles in their org) */}
+              {activeUser.canSwitchRole && (activeUser.assignedRoles?.length || 0) > 1 && (
+                <div className="py-2 border-b border-slate-100">
+                  <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Switch Active Role
+                  </p>
+                  <div className="space-y-1 mt-1">
+                    {activeUser.assignedRoles?.map((r) => {
+                      const isCurrent = r.name === activeUser.role;
+                      const norm = normalizeRole(r.name);
+                      const cfg = ROLES_CONFIG[norm];
+                      return (
+                        <button
+                          key={r.id}
+                          disabled={isCurrent}
+                          onClick={async () => {
+                            setShowUserDropdown(false);
+                            await switchRole(r.name);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition-colors ${
+                            isCurrent
+                              ? 'bg-indigo-50 text-indigo-700 font-bold cursor-default'
+                              : 'hover:bg-slate-100 text-slate-700 cursor-pointer'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <ShieldCheck className={`w-3.5 h-3.5 ${isCurrent ? 'text-indigo-600' : 'text-slate-400'}`} />
+                            <span>{r.title || cfg?.title || r.name}</span>
+                          </div>
+                          {isCurrent && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="py-2 space-y-1">
-                {hasPageAccess(activeUser.role, 'settings') && (
+                {canAccessPage(activeUser, 'settings') && (
                   <button
                     onClick={() => {
                       setActiveView('settings');
@@ -298,14 +351,19 @@ export const TopNav: React.FC<TopNavProps> = ({ onMobileMenuClick }) => {
 
               <div className="border-t border-slate-100 pt-2 mt-1">
                 <button
-                  onClick={() => {
+                  disabled={isLoggingOut}
+                  onClick={async () => {
                     setShowUserDropdown(false);
-                    logout();
+                    await logout();
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 text-left"
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 text-left disabled:opacity-60 cursor-pointer transition-colors"
                 >
-                  <LogOut className="w-4 h-4 text-rose-500" />
-                  Sign Out to Home Page
+                  {isLoggingOut ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                  ) : (
+                    <LogOut className="w-4 h-4 text-rose-500" />
+                  )}
+                  <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span>
                 </button>
               </div>
             </div>

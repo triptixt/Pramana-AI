@@ -57,3 +57,5 @@ class Audit(Base):
     creator = relationship("User", back_populates="audits_created")
     reviews = relationship("AuditReview", back_populates="audit", cascade="all, delete-orphan")
     decisions = relationship("AuditDecision", back_populates="audit", cascade="all, delete-orphan")
+    ai_runs = relationship("AIRun", back_populates="audit")
+    gap_analyses = relationship("GapAnalysis", back_populates="audit")

@@ -53,8 +53,16 @@ class AIRun(Base):
         nullable=False
     )
 
+    audit_id = Column(
+        Integer,
+        ForeignKey("audits.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
     # Relationships
     organization = relationship("Organization", back_populates="ai_runs")
     evidence = relationship("Evidence", back_populates="ai_runs")
     user = relationship("User", back_populates="ai_runs")
+    audit = relationship("Audit", back_populates="ai_runs")
     outputs = relationship("AIOutput", back_populates="ai_run", cascade="all, delete-orphan")
